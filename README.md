@@ -22,7 +22,32 @@ Target 4-5 shorts per video when enough usable content exists. If quality filter
 5. Select 4-5 distinct shorts, remove unusable ranges, and preserve coherent speech.
 6. Let the user preview the results, then export shorts and extracted audio.
 
-The desktop framework, transcription provider, media toolchain, clip duration, and export presets will be selected during architecture work. No application code is implemented yet.
+The planned stack is **Tauri 2 + React/TypeScript + a Python worker**, with **FFmpeg/ffprobe** handling native media operations. See [the architecture decision](docs/architecture/0001-desktop-stack.md) for boundaries and packaging tradeoffs. Transcription providers, clip duration, and export presets will be selected during implementation.
+## Repository structure
+
+```text
+apps/desktop/                  React UI and Tauri desktop shell
+  src/app/                     Application composition
+  src/features/                Library, editor, and exports
+  src/shared/                  Reusable UI and utilities
+  src-tauri/                   Rust shell, capabilities, sidecar resources
+packages/media-engine/         Python worker with a src package layout
+  src/smartclipper_engine/     Domain, pipeline, adapters, and IPC
+packages/contracts/            Versioned message schemas and examples
+docs/architecture/             Design decisions
+docs/development/              Team workflow
+tooling/                       Development and packaging helpers
+tests/                         Integration, desktop journeys, and fixtures
+.github/                       Pull request template
+.codex/                        Development model configurations
+```
+
+Each component has a README describing its responsibilities. Empty directories are retained with `.gitkeep` files. This is a structure scaffold; application manifests, dependency lockfiles, executable code, and CI workflows will arrive with implementation.
+
+## Team branches
+
+Use `main` for integration and pull requests from focused topic branches. Initial team branches are `feature/desktop-ui`, `feature/media-pipeline`, and `feature/ai-highlights`. See [team workflow](docs/development/team-workflow.md) before starting work.
+
 
 ## Development model configuration
 
@@ -71,6 +96,6 @@ These profiles configure the development assistant. They do not implement automa
 
 ## Current scope
 
-This initial repository contains only this README and development model configuration/policy. Desktop application development is the next phase.
+The repository contains product documentation, a desktop/worker folder scaffold, team workflow, and development model configuration/policy. No runnable application is implemented yet.
 
 Configuration references: [Codex profiles](https://learn.chatgpt.com/docs/config-file/config-advanced), [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference), and [model availability](https://learn.chatgpt.com/docs/models).

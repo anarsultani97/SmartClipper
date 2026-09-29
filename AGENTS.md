@@ -10,4 +10,4 @@ Classify the task before work. Explicit high priority and architecture take prec
 
 Keep context and responses concise. Search before reading, use focused excerpts, and reuse existing findings. Raise reasoning effort only when the task needs it. Avoid unnecessary parallel agents, repeated analysis, and duplicate outputs.
 
-The initial scope is README and model configuration only. Add application code only when requested.
+The repository now has an authorized desktop/worker folder scaffold. Follow docs/architecture/0001-desktop-stack.md for the stack and component boundaries, and docs/development/team-workflow.md for branch conventions. Add runnable application code only when requested.
