@@ -1,0 +1,5 @@
+# Default for lightweight SmartClipper development work.
+# Choose a named profile for medium or high-priority/architecture tasks.
+model = "gpt-6-luna"
+model_reasoning_effort = "low"
+model_verbosity = "low"
