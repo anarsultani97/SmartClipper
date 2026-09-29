@@ -13,7 +13,8 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
-build/
+/build/
+/packages/media-engine/build/
 
 # Rust / Tauri
 target/
