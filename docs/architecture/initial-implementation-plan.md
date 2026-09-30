@@ -1,295 +1,328 @@
-# SmartClipper: Initial Workflow, Architecture, and Milestones
+# SmartClipper: Web Application Workflow and Implementation Plan
 
 Date: 2026-09-30
-Status: Initial implementation plan
-Related decision: [ADR 0001: Desktop stack](0001-desktop-stack.md)
+Status: Proposed implementation plan; supersedes the desktop workflow.
+Related: [web stack decision](0002-web-stack.md), [technology stack](tech-stack.md), [team workflow](../development/team-workflow.md).
 
-## Product goal and initial scope
+## 1. Product scope
 
-Build a Windows and macOS desktop app with this experience:
+Build a browser application for Windows and macOS users. A user uploads a long video, optionally supplies a transcript, receives 4-5 meaningful short suggestions, reviews them in a video/timeline workspace, and downloads approved shorts and extracted MP3. Social account connection and publishing come later.
 
-**Import a video -> receive 4-5 meaningful short suggestions -> preview and adjust them -> export ready-to-share videos.**
+Start with speech-led interviews, podcasts, tutorials, and presentations. Suggestions should preserve the speaker's meaning, have a clear opening and payoff, and avoid unusable scenes. Produce fewer than five when insufficient good material exists; explain why. Do not promise virality. Silent footage and heavily edited entertainment need a later visual-first strategy.
 
-The first version focuses on spoken content: interviews, podcasts, tutorials, presentations, and talking-head videos. This makes it possible to evaluate whether clips preserve meaning. Sports, music, and largely silent videos need a different approach to highlight detection.
+Proposed defaults: five continuous clips, usually 30-60 seconds, configurable by the user. Keep the source immutable. Trimming, captions, crop, and fit are editable metadata until export.
 
-Use Tauri, React/TypeScript, Python, and FFmpeg. Generate editable clip plans before rendering final videos. Social account connections and direct publishing are deferred until the editing and export workflow is reliable.
+This specifies the target implementation and validation. A local UI/import/database review slice now exists; see [local development](../development/local-development.md). Hosted services, transcription, AI selection, and short rendering remain planned. The desktop scaffold is historical.
 
-## 1. User workflow
+## 2. User workflow, step by step
 
-The user starts a project by dragging in a video or clicking **Import video**. Importing initially opens a local file; it does not require uploading the entire video to a server.
+1. **Sign in and create a project.** Select video, language if known, audience, short style, duration, and desired count. Show file limits, upload estimates, and retention before upload.
+2. **Upload with retry.** Send video directly to private object storage through temporary authorized URLs. Multipart uploads retry failed parts. Upload time is a real constraint; processing speed cannot compensate for a slow connection.
+3. **Optionally upload a transcript.** Accept SRT, VTT, or TXT. Validate timed transcripts against the source; align plain text with audio before it can drive cuts.
+4. **Analyze in the background.** Show upload, queue, preparation, transcription, context selection, quality review, and readiness separately. Report measured stage progress without inventing total percentages for unknown AI latency.
+5. **Review suggestions.** Cards show title, thumbnail, duration, source range, why the moment works, and quality/transcript caveats. Allow rejection and budgeted alternative generation.
+6. **Edit in a workspace.** Play source or short, navigate transcript, trim on a timeline, choose vertical crop/fit, and toggle captions. Autosave revisions and surface conflicts.
+7. **Export and download.** Export chosen revisions in the background. Provide MP4, optional SRT, and MP3 downloads with visible expiry. Re-export while the source remains available.
 
-| Input | Purpose |
+Closing the tab does not stop server jobs. Reopening retrieves saved state. Cancellation covers processing and export; aborting an upload releases incomplete storage parts.
+
+## 3. Architecture
+
+~~~mermaid
+flowchart LR
+    B[React browser app] -->|authenticated REST| A[FastAPI]
+    B -->|authorized multipart upload| S[Private object storage]
+    A --> P[(PostgreSQL)]
+    A -->|outbox dispatcher| Q[Redis / Celery]
+    Q --> W[Python workers]
+    W --> F[FFmpeg / ffprobe]
+    W --> T[Transcription adapter]
+    W --> L[Context / highlight adapter]
+    W --> P
+    W --> S
+    A -->|job state and media authorization| B
+    S -->|temporary preview / download URLs| B
+~~~
+
+| Component | Responsibility |
 | --- | --- |
-| Video file | Source material |
-| Optional SRT, VTT, or TXT transcript | Reuse an existing transcript |
-| Intended audience | Identify moments relevant to viewers |
-| Desired style | Educational, story, interview, opinion, or demonstration |
-| Preferred length | Start with a configurable 30-60 second default |
-| Number of shorts | Default to 5 |
+| React | Upload, project navigation, HTML video playback, transcript, timeline, clip choices, export status |
+| FastAPI | Authentication/ownership, upload sessions, metadata, validation, edits, jobs, cancellation, temporary media access |
+| Workers | Source retrieval, probing, extraction, transcription, quality/context analysis, rendering |
+| PostgreSQL | Authoritative ownership, source assets, revisions, jobs/checkpoints, quotas, artifacts, outbox |
+| Object storage | Private sources, audio, proxies, waveforms, thumbnails, transcripts, exports |
+| Redis/Celery | Dispatch/execution; database state governs recovery |
 
-Audience and style are optional. The app can infer an initial interpretation and let the user correct it.
+Heavy media work runs in independent workers. FastAPI recommends tools such as Celery for substantial background computation across processes or servers. [FastAPI background tasks](https://fastapi.tiangolo.com/tutorial/background-tasks/)
 
-Show meaningful processing stages: **Reading video**, **Preparing transcript**, **Finding highlights**, and **Preparing previews**. Users can cancel, leave the project, and return later.
+Start with one API and one worker codebase. Separate CPU/GPU deployment when measurement supports it. Avoid a microservice per pipeline stage. Provider credentials stay on servers.
 
-Each suggestion includes:
+## 4. Uploads, ownership, and source validation
 
-- Title, thumbnail, duration, and preview.
-- Description of its topic.
-- A selection reason, such as answering a common question or containing a complete before-and-after story.
-- Anything needing attention, such as uncertain captions or poor framing.
+### Upload protocol
 
-Rank editorial quality and audience relevance. Do not present a speculative viral score as a promise; actual engagement requires audience feedback.
+1. API authenticates the user, checks quotas, creates a project asset/upload session, and generates an opaque owner/project-scoped object key.
+2. Browser receives short-lived URLs for a bounded set of parts; no storage account credentials or arbitrary storage paths.
+3. Browser uploads with limited concurrency and individual retries. Persist upload ID, part numbers, ETags/checksums, and selected-file metadata. After restart, reselect the file if necessary and verify it matches before resuming.
+4. API completes the upload after checking ownership and part metadata. Verify the stored object's existence, size, and integrity metadata; browser success alone is insufficient.
+5. Commit source readiness and a job/outbox record in one database transaction. Dispatcher queues it; reconciler repairs missed dispatches. Idempotency keys prevent duplicate completion jobs.
+6. Expire abandoned sessions and abort incomplete multipart uploads. Replacements use new keys so signed uploads cannot overwrite other revisions.
 
-## 2. Desktop architecture
+S3 presigned URLs grant temporary upload access without exposing AWS credentials. Multipart upload permits independent retries and assembly after completion. Configure storage CORS and exposed upload response headers. [Presigned uploads](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html), [multipart uploads](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html)
 
-```mermaid
-flowchart TD
-    UI["React interface<br/>Library, suggestions, player, timeline"]
-    Shell["Tauri / Rust<br/>File access, commands, worker supervision"]
-    Worker["Python worker<br/>Jobs, analysis, clip planning"]
-    Media["FFmpeg / ffprobe<br/>Audio, previews, quality checks, rendering"]
-    ASR["Transcription and alignment adapters"]
-    AI["Context and highlight selection"]
-    Store["SQLite metadata + local artifact cache"]
+### Validation and isolation
 
-    UI <-->|Typed commands and events| Shell
-    Shell <-->|Versioned messages| Worker
-    Worker --> Media
-    Worker --> ASR
-    Worker --> AI
-    Worker --> Store
-```
+Authorize every project, asset, job, edit, and download by owner. Start with per-user projects; organizations can extend this later. Prefer same-origin deployment and secure sessions with CSRF protection for cookie-authenticated mutations.
 
-React handles interaction. Rust handles desktop integration and supervises the worker. Python coordinates processing. Native tools perform expensive media operations.
+Probe actual containers/streams; filenames and browser MIME types are hints. Enforce bytes, duration, resolution, stream count, scratch storage, and processing-time limits. Run FFmpeg with argument arrays, restricted input protocols, and local worker paths. Remote media URL import is deferred. Isolate media processing in bounded containers with restricted network access; only approved adapters call external providers.
 
-Communicate between the shell and worker using framed JSON messages on stdin/stdout. Send diagnostic logs to stderr. Transfer file references and metadata rather than full audio or video buffers.
+Normalize a single source timeline, recording rotation, VFR/frame rate, stream offsets, channel layout, and duration. Maintain explicit mappings among source, transcript, proxy, and edited output timestamps.
 
-Use SQLite for projects, jobs, transcript metadata, suggestions, and edit history. Store larger artifacts such as audio, thumbnails, proxies, models, and exports as files in an application-managed directory. The worker owns project writes to avoid competing desktop and worker database updates.
+## 5. Audio extraction and playback
 
-For cloud AI, send only material needed for the current step, with a clear user choice about cloud processing. Local transcription alone does not make the whole context-analysis pipeline offline.
+Extract analysis audio once; generate optional downloadable MP3 separately and cache it. Avoid converting compressed MP3 back into transcription audio.
 
-## 3. Inspect the source and prepare reusable assets
-
-Use ffprobe to inspect duration, dimensions, rotation, codecs, frame rate, variable timing, audio tracks, and stream start times.
-
-Reject unreadable files with a useful explanation. Videos without audio can be imported, but the initial speech-based highlight pipeline should explain its limitation.
-
-Prepare assets independently where resources allow:
-
-| Artifact | Use |
-| --- | --- |
-| Analysis audio | Transcription and speech detection |
-| Optional MP3 | Downloadable extracted audio |
-| Thumbnail strip | Timeline navigation |
-| Audio waveform | Speech and pause visibility |
-| Preview proxy, when needed | Smooth playback of large or unsupported sources |
-
-Use WAV for local speech analysis and MP3 as an export option. Do not require MP3 conversion before transcription.
-
-```sh
-# Analysis audio for a local Whisper pipeline
+~~~sh
+# Analysis audio; select the intended audio stream after probing.
 ffmpeg -i input.mp4 -map 0:a:0 -vn -ac 1 -ar 16000 -c:a pcm_s16le analysis.wav
 
-# User-facing MP3 extraction
+# User-requested audio extraction.
 ffmpeg -i input.mp4 -map 0:a:0 -vn -c:a libmp3lame -q:a 2 audio.mp3
-```
+~~~
 
-These commands illustrate the operations. Application code must also handle audio-track selection, errors, cancellation, and source-time offsets. See [FFmpeg documentation](https://ffmpeg.org/ffmpeg.html).
+Production invocation also needs validated paths, overwrite policy, progress, limits, and cancellation. Handle missing audio, multiple tracks, and decode failures explicitly.
 
-Attempt compatible source playback first; create a lower-resolution proxy when necessary. Do not automatically transcode every import. Final exports use the original source.
+Generate a lightweight H.264/AAC MP4 proxy with compatible pixel format, normalized orientation, and fast-start metadata. Serve byte ranges with correct CORS. Map proxy timestamps explicitly instead of assuming offsets survive re-encoding.
 
-## 4. A shared transcript interface
+A playable local file may use a temporary browser object URL during upload; server assets become authoritative after preparation. Revoke object URLs when finished. Generate waveform summaries and thumbnail sheets server-side and load by timeline viewport.
 
-Normalize every transcript source into one internal representation:
+Initial suggestions preview bounded ranges in one proxy. Render exact crop/caption previews on demand. Final exports use source quality. Evaluate HLS only if measured playback/seek problems justify it.
 
-```text
-Transcript
-  language
-  source: imported | local_asr | cloud_asr
-  segments:
-    id
-    start_ms
-    end_ms
-    text
-    optional speaker
-    optional words with timestamps
-    optional confidence
-```
+## 6. Transcript ingestion and recognition
 
-Do not invent confidence values when a provider does not supply them.
+Provider-independent contract:
 
-| Input | Processing |
-| --- | --- |
-| SRT / VTT | Parse timings, validate against video duration, check synchronization |
-| TXT | Align text to audio; text alone does not identify cut locations |
-| No transcript | Generate a transcript from audio |
+~~~text
+TranscriptRevision: id, source_asset_id, language, provider, model_version,
+                    timing_basis, alignment_status, created_at
+Segment: id, start_ms, end_ms, text, optional speaker,
+         optional confidence, optional words[{text,start_ms,end_ms}]
+~~~
 
-An uploaded transcript may describe a different edit of the same video. Detect substantial mismatches and allow correcting the offset, replacing the file, or regenerating the transcript.
+Use integer milliseconds and half-open source ranges [start_ms, end_ms). IDs remain stable within a revision; clips reference that revision.
 
-The initial local backend recommendation is **whisper.cpp behind a Python adapter**. It supports Windows and macOS, CPU execution, hardware acceleration including Metal on Apple Silicon, and voice activity detection. This provides native performance without writing a custom C++ inference engine. [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+### Supplied transcript
 
-Benchmark **faster-whisper** as an alternative, especially on NVIDIA-equipped Windows machines. Its Python interface supports batching and word timestamps. Initially ship one validated default backend rather than several equally complex paths. [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+- **SRT/VTT:** parse server-side, sanitize display text, validate order, bounds, overlaps, and timing. Sample audio alignment. Substantial mismatch may indicate a different edit; request correction.
+- **TXT:** align text with audio through an adapter. Untimed text cannot supply valid cut timestamps. If alignment fails, offer automatic transcription or manual timing.
+- Preserve original and normalized revisions. Transcript edits invalidate context/suggestions, while audio preparation remains reusable.
 
-For optional cloud transcription, the current OpenAI guidance recommends `gpt-transcribe` for ordinary recorded speech and `whisper-1` for word/segment timestamps. Select providers based on both recognition quality and timing requirements. Recheck model availability and API capabilities when implementing the adapter. [OpenAI transcription documentation](https://developers.openai.com/api/docs/guides/speech-to-text)
+### Automatic transcription
 
-Treat precise word alignment as a separate capability. Evaluate WhisperX when subtitle timing or imported-text alignment needs improvement, considering language support and packaging cost. [WhisperX](https://github.com/m-bain/whisperX)
+Start with a **faster-whisper** server adapter. Benchmark CPU quantization and GPU deployment; use word timestamps and voice activity detection where appropriate. Its CTranslate2 runtime supports CPU/GPU execution; batching trades memory for throughput, requiring measurement on our hardware. [faster-whisper documentation](https://github.com/SYSTRAN/faster-whisper)
 
-## 5. Context extraction and highlight selection
+Preload models in persistent workers. Choose model/precision by language accuracy, caption timing, throughput, and memory. Handle chunk overlap/deduplication, silence, music, and low-confidence speech. Do not treat hallucinated speech as reliable context.
 
-A useful short needs enough setup to make sense, an engaging central point, and a satisfactory ending. Selecting the most interesting sentence alone is insufficient.
+Keep optional hosted ASR behind an adapter. Verify current file limits, language/timestamp support, pricing, and retention before implementation; disclose external processing. Evaluate forced alignment such as WhisperX where timing is inadequate, subject to language support and model licenses. [WhisperX](https://github.com/m-bain/whisperX)
 
-1. **Create a topic map:** divide the transcript into coherent sections with original timestamps.
-2. **Summarize the video:** record subject, intended audience, key arguments, terminology, and recurring themes.
-3. **Generate candidates:** propose approximately 10-15 moments grounded in transcript segment IDs.
-4. **Check surrounding context:** expand candidates that depend on an earlier question, unexplained reference, or missing conclusion.
-5. **Rank candidates:** assess opening, standalone clarity, useful information, emotional interest, and audience relevance.
-6. **Remove repetition:** select 4-5 distinct moments rather than variants of the same point.
-7. **Validate timing in code:** resolve segment IDs to actual timestamps; check duration, boundaries, and source limits.
+## 7. Context and meaningful clip selection
 
-AI proposes which source segments belong together. It must not invent timestamps or quotes.
+1. Build a hierarchical topic map: summary, speaker intent, topic boundaries, examples, claims, and conclusions. Long transcripts use bounded chunks with overlap and a compact combined outline.
+2. Generate 10-15 candidates referencing existing segment IDs. Prefer a hook, standalone value, and payoff; check whether pronouns/claims need preceding context.
+3. Expand boundaries to coherent speech/topic boundaries within source and duration limits. First-release clips remain continuous; montages come later.
+4. Rank by coherence, audience relevance, information value, opening strength, and source quality. Deduplicate overlapping moments/repeated ideas and favor topic diversity.
+5. Validate structured model responses against the transcript revision. Resolve time deterministically from segment IDs; reject invented IDs, quotes, and invalid ranges.
+6. Combine context judgments with quality findings and select 4-5 viable candidates. Return fewer with an explanation when needed.
+7. Show titles/reasons and optional caption/title suggestions for user review. Do not silently rewrite spoken claims or publish.
 
-Favor one continuous excerpt per short in the first version. Stitching distant statements into a new sequence increases editing complexity and the risk of changing meaning.
+Versioned ClipPlan stores project/source IDs, transcript revision, selected segment IDs, source ranges, title, rationale, quality findings, crop/fit, captions, and edit revision. Store evidence and brief explanations rather than requesting internal model reasoning.
 
-```text
-ClipPlan
-  source_video_id
-  transcript_revision
-  selected_segment_ids
-  source_ranges
-  title
-  selection_reason
-  quality_findings
-  crop_settings
-  caption_settings
-  revision
-```
+Use text first, then a few representative frames when visual context matters. Avoid entire-video requests and repeating complete transcripts per candidate. Cache topic/candidate analysis by input/model/prompt version. Bound output tokens, retries, candidates, and per-project inference cost.
 
-Use cost-efficient models for extraction and preliminary classification, with stronger models for final selection when evaluation demonstrates a benefit. Development Luna/Sol/Astra profiles are separate from runtime model configuration.
+Development profiles remain Luna for lightweight tasks, Sol for medium work, and Astra for architecture/high priority. These do not configure production AI. Choose runtime models independently by supported APIs, measured quality, cost, latency, and data handling.
 
-## 6. Visual context and quality filtering
+## 8. Bad-scene filtering without breaking meaning
 
-Transcript analysis can miss a demonstration, slide, reaction, or visual reveal. Add visual evidence selectively.
+Run inexpensive coarse checks during audio preparation, then denser analysis around shortlisted ranges and nearby boundaries.
 
-Detect shot boundaries and extract representative frames. PySceneDetect's adaptive detector adjusts to surrounding frame changes and can reduce false detections caused by camera motion. [PySceneDetect](https://www.scenedetect.com/docs/latest/api/detectors.html)
+- Detect sustained black/frozen frames, severe blur, corrupt/undecodable frames, and missing usable video. Calibrate durations/thresholds on representative footage. [FFmpeg filters](https://ffmpeg.org/ffmpeg-filters.html)
+- Use scene-cut detection to improve boundaries through an adapter such as PySceneDetect. Validate on slides, fades, and camera cuts. [PySceneDetect](https://www.scenedetect.com/docs/latest/)
+- Missing faces/object detections do not imply unusable footage; slides, screens, and intentional darkness can carry context.
+- Reject decode failures and sustained unusable footage; judge brief transitions by duration/context.
+- Prefer replacing the candidate or adjusting its boundary when damage overlaps speech. Do not remove spoken evidence just to hide blur. Later internal cuts must remap audio/captions/timeline together and flag semantic discontinuities.
 
-Run lightweight checks across the source, then analyze shortlisted ranges in more detail:
+Record findings as timestamped evidence with severity and detector/settings version; allow user preview and override. Quality scores triage footage; they do not predict virality.
 
-| Finding | Initial response |
-| --- | --- |
-| Undecodable or corrupt footage | Exclude affected ranges |
-| Sustained black frames | Flag or exclude, considering intentional transitions |
-| Severe blur | Reject the candidate or adjust boundaries |
-| Brief motion blur | Evaluate in context |
-| Face not detected | Do not automatically reject; slides and demonstrations may be valuable |
+## 9. Browser review workspace
 
-FFmpeg provides `blackdetect` and `blurdetect`. Calibrate thresholds against representative footage. Sampled scans can miss brief defects, so inspect selected ranges more densely before export. [FFmpeg filters](https://ffmpeg.org/ffmpeg-filters.html)
+~~~text
++------------------+-----------------------------+--------------------+
+| Suggested shorts | Video: source / selected    | Transcript /       |
+| title + reason   | Crop, fit, caption preview  | searchable context |
+| duration + flags | Playback and trim controls  | click to seek      |
++------------------+-----------------------------+--------------------+
+| Timeline: thumbnails, waveform, speech, scene cuts, quality flags   |
+| Source time ruler, selected range, zoom, snapping, in/out handles    |
++--------------------------------------------------------------------+
+| Save status | alternatives | export selected | persistent job status |
++--------------------------------------------------------------------+
+~~~
 
-Removing a defective interval from the middle of an explanation may break the sentence. Prefer another candidate or flag it for review. Produce fewer than five clips when the source cannot support five good ones.
+Use HTML video with Canvas/SVG timeline. Virtualize long transcripts and fetch waveforms/thumbnails by viewport. Pointer interactions stay local; debounce metadata saves. Support keyboard playback, seeking, selection, and trimming.
 
-## 7. Preview and timeline workspace
+Start with polling persisted job state, resuming on focus/reconnect. Add server-sent events later with event sequencing/state reconciliation so missed events cannot strand the UI. Refresh expiring media URLs while preserving edit/playback position.
 
-```text
-+--------------------------------------------------------------+
-| Project name     Analysis status              Export selected |
-+----------------+--------------------------+------------------+
-| Suggested      |                          | Transcript       |
-| shorts         |      Video preview       |                  |
-|                |                          | Click text to    |
-| Title          |  Original / Final crop   | seek the video   |
-| Duration       |                          |                  |
-| Why selected   |                          | Caption settings |
-+----------------+--------------------------+------------------+
-| Timeline: thumbnails, waveform, clip ranges, quality markers  |
-| Play / Pause    Zoom    Trim handles    Undo / Redo             |
-+--------------------------------------------------------------+
-```
+Use optimistic revision checks (If-Match or equivalent) and explicit conflicts between tabs. Exports capture an immutable revision, so edits during rendering do not change that export.
 
-Selecting a suggestion jumps to its range. Clicking transcript text seeks to that point. Trim handles snap to nearby speech boundaries with an option for precise adjustment.
+## 10. Durable jobs, cancellation, and recovery
 
-Provide two timeline views:
+Persist queued/running/completed/failed/cancelled states, stage, attempt, heartbeat, cancellation request, timestamps, error codes, and artifacts. Upload session state is separate. Retries record new attempts without erasing previous errors.
 
-- **Source overview:** where all suggestions occur in the original video.
-- **Selected short:** that short's edits, captions, and crop settings.
+Treat delivery as at least once. Claim jobs through database leases and heartbeat renewal. Publish outputs atomically through deterministic or versioned keys plus committed manifests. Repeated delivery must not duplicate suggestions/exports. Configure Celery acknowledgments and visibility timeouts alongside leases for long-running work. [Celery tasks](https://docs.celeryq.dev/en/stable/userguide/tasks.html)
 
-Keep editing nondestructive: changes update the clip plan and leave the source intact.
+Checkpoint preparation, transcript, context, quality, and export. Bound retries with backoff for transient failures; fail unsupported input promptly. Reconcile stale leases and outbox entries. Recover AI timeouts without re-uploading valid media.
 
-Review uses source/proxy playback over the selected ranges. Generate a small preview render only when an effect cannot be accurately represented in the player. Moving a trim handle should not repeatedly encode video.
+Cancellation is persisted. Workers check between stages and during long operations, stop their FFmpeg process group, discard partial artifacts, and release leases/scratch. Queue revocation alone is insufficient. Cleanup also handles crashes.
 
-## 8. Export approved clips
+Limit active jobs per user, native threads, GPU memory, provider concurrency, disk, and retries. Separate interactive analysis from bulk exports if necessary; add fair scheduling before broad release.
 
-Initial export capabilities:
+## 11. Export, retention, and deployment
 
-- Vertical 9:16 output.
-- Manual crop with safe framing controls.
-- Optional readable captions.
-- MP4 output with compatible video/audio settings.
-- Optional SRT captions and extracted MP3.
-- Batch export of selected suggestions.
+### Export
 
-Start with manual cropping and a fit-within-vertical-frame alternative. Add subject tracking after the basic workflow works; a centered crop can lose speakers, slides, or products.
+Start with MP4 H.264/AAC, vertical 9:16, manual crop or fit, optional burned captions and SRT. Re-encode accurate cuts rather than keyframe-limited stream copy. Apply time mappings to captions and any removed intervals; validate synchronization.
 
-Translate clip plans into FFmpeg operations for trim, crop, scale, captions, and audio processing. Accurate arbitrary cuts and visual effects generally require re-encoding. Stream copying is useful only for compatible cases.
+Batch exports are independent jobs. Cache by source fingerprint, clip revision, and render settings. Signed downloads expire; reauthorize every new URL request.
 
-Maintain a source-time to edited-time mapping so captions remain synchronized after cuts. Preserve media timing internally, especially for variable-frame-rate sources.
+### Storage lifecycle
 
-## 9. Codebase responsibilities
+Proposed beta defaults: seven-day source/proxy/export retention, scratch cleanup within 24 hours. Confirm before implementation and display expiry/explicit deletion. Transcript and metadata retention follows a published policy including their sensitivity. Expired sources require re-upload for rendering; project state must reflect this.
 
-Paths below are planned implementation modules, not existing application code. Engine paths are relative to `packages/media-engine/src/smartclipper_engine/`.
+Delete artifacts through a retried cleanup job, including multipart sessions and provider artifacts where applicable. Define backup expiry separately. Encrypt storage, keep buckets private, exclude transcript/media contents from logs, and redact signed URLs/credentials.
 
-| Area | Planned responsibilities |
-| --- | --- |
-| `apps/desktop/src/features/library` | Import, project list, processing status |
-| `apps/desktop/src/features/editor` | Suggestions, player, transcript, timeline, crop controls |
-| `apps/desktop/src/features/exports` | Presets, export queue, results |
-| `apps/desktop/src-tauri/src` | Validated commands, worker supervision, file access |
-| Engine `domain/` | Video, transcript, time range, quality finding, clip plan |
-| Engine `pipeline/` | Import, transcription, analysis, selection, rendering jobs |
-| Engine `adapters/media/` | ffprobe, FFmpeg, scene analysis |
-| Engine `adapters/transcription/` | Subtitles, local ASR, alignment, optional cloud |
-| Engine `adapters/ai/` | Context extraction and ranking |
-| Engine `ipc/` | Commands, progress, cancellation, errors |
-| `packages/contracts` | Shared schemas and representative messages |
+### Deployment
 
-Add persistence and artifact-cache modules within the media engine. Persist each job as `queued`, `running`, `completed`, `failed`, or `cancelled`. Reuse successful intermediate outputs so an export failure does not trigger another transcription.
+Develop with Docker Compose: API, worker, PostgreSQL, Redis, and an explicitly selected S3-compatible development target. Prefer Linux backend containers on Windows/macOS development machines, with a CPU path requiring no GPU.
 
-## 10. Sequential implementation milestones
+Deploy static React via CDN/reverse proxy, same-origin /api to FastAPI, and long-lived worker containers. Prefer managed storage/database/queue services where practical. Start in one region chosen for users, privacy, and upload latency. Keep media transfer out of API memory. GPU workers are a measured scaling choice; Kubernetes is unnecessary initially.
 
-| Milestone | Deliverable | Completion criterion |
-| --- | --- | --- |
-| **1: First working desktop slice** | Launch, import MP4, playback, choose a range, export one clip | Works on Windows/macOS; source unchanged; exported audio/video synchronized |
-| **2: Audio and transcripts** | WAV preparation, MP3 export, SRT/VTT import, local transcription, transcript seeking | Segment clicks seek correctly; missing audio and invalid subtitles handled |
-| **3: Context-based suggestions** | Topic map, candidate generation, ranking, 4-5 suggestions | Real source segments, complete ideas, limited duplication |
-| **4: Visual context and quality** | Shot boundaries, representative frames, quality intervals | Fixture defects detected; valid slides/dark scenes not indiscriminately rejected |
-| **5: Review workspace** | Cards, source/clip timelines, trims, transcript edits, undo/redo | Review and adjustments do not rerun unrelated analysis |
-| **6: Publishable exports** | Vertical framing, captions, batch rendering, preview consistency | Export framing, timing, captions, and duration match approved plans |
-| **7: Speed and reliability** | Caching, bounded concurrency, cancellation, restart recovery | Reopen reuses valid artifacts; failures preserve edits |
-| **8: Installable beta** | Packaged workers, model downloads, Windows installer, signed/notarized macOS distribution | Clean machines need no separate Python or FFmpeg installation |
-| **9: Social publishing, later** | Account connections and publishing adapters | Platform authorization, upload, and retries validated |
+Record tool/model versions and FFmpeg build flags. Review codec, FFmpeg, and model licensing before beta. Social connections, mobile-first editing, collaborative live editing, and browser-side encoding remain later work.
 
-Milestone 1 includes an early packaging experiment on both operating systems. Discover playback and sidecar-distribution problems before building the full AI workflow.
+## 12. Proposed codebase and scaffold migration
 
-The UI and media-engine branches can work concurrently after contracts are agreed. The AI branch initially consumes saved transcript fixtures so suggestion quality can improve before desktop integration is complete. Follow [the team workflow](../development/team-workflow.md) for focused branches and pull requests.
+Create this structure with the first implementation PR; this documentation commit does not create runnable services:
 
-## 11. Performance and quality evaluation
+~~~text
+apps/web/src/
+  app/                         routing, providers, composition
+  features/                    upload, projects, review, editor, exports
+  shared/                      UI primitives, API client, media helpers
+services/api/src/smartclipper_api/
+  routes/                      authenticated versioned HTTP endpoints
+  application/                 project, upload, edit, job commands
+  auth/                        sessions and ownership
+  persistence/                 repositories and migrations
+services/worker/src/smartclipper_worker/
+  tasks/                       Celery entry points and stage dispatch
+  runtime/                     leases, cancellation, scratch lifecycle
+packages/media-engine/src/smartclipper_engine/
+  domain/                      ranges, transcripts, clip plans, findings
+  pipeline/                    reusable processing stages
+  adapters/                    media, transcription, context, quality
+packages/contracts/            OpenAPI-generated TS types and schemas
+infra/                         containers and deployment templates
+tests/                         contracts, integration, browser, fixtures
+docs/                          decisions, milestones, developer guides
+tooling/                       development helpers
+.codex/                        development model profiles
+~~~
 
-Optimize time to first useful suggestion, time spent reviewing, and time to final export.
+Retire apps/desktop and engine desktop ipc/ when scaffolding runnable web services; preserve useful React/domain boundaries. Queue orchestration belongs in services/worker; algorithms stay independent of HTTP/Celery. Share backend persistence only where needed and assign explicit migration ownership. Generate frontend API types from FastAPI OpenAPI.
 
-Measure:
+Core entities: User, Project, SourceAsset, UploadSession, TranscriptRevision, ClipPlanRevision, ProcessingJob, JobAttempt, Artifact, OutboxEvent. All project-owned records enforce ownership references.
 
-- Transcription time divided by source duration.
-- Time to first candidate preview.
-- Export time for a fixed clip and preset.
-- Peak memory and temporary disk usage.
-- Cache-hit rate and cloud cost per source minute.
+API groups under /api/v1: projects; upload sessions/parts/complete/abort; jobs/status/cancel/retry; transcript revisions; suggestions; clip revisions; exports; artifact access. Job creation returns HTTP 202 and stable job ID. Completion/retry/export accept idempotency keys; all groups apply ownership, revisions, and quotas.
 
-Benchmark a defined Windows CPU laptop, Windows NVIDIA machine, and Apple Silicon Mac. Establish processing-time targets from measured results rather than promising universal speed.
+## 13. Implementation milestones, one by one
 
-Cache by source fingerprint, stage settings, and model/version. Caption edits invalidate captions and affected exports, not transcription. Changing the audience reruns selection, not audio extraction.
+Each milestone delivers an end-to-end increment. These acceptance checks are future implementation work, not checks performed by this documentation update.
 
-Bound heavy-job concurrency, especially when transcription and encoding compete for a GPU. Generate thumbnails and waveform data at useful resolutions, keep models loaded across related jobs, and inspect shortlisted footage more deeply than the rest.
+### Milestone 0 — Web foundation and contracts
 
-Create a small, consented evaluation set with interviews, tutorials, accents, noise, silence, screen recordings, rotated footage, and variable-frame-rate recordings. Reviewers label useful moments and judge whether suggestions are understandable, faithful, distinct, and worth publishing.
+- Scaffold React/Vite, FastAPI, worker, lockfiles, Linux containers, local services, and environment examples.
+- Establish sign-in, ownership, limits, migrations, generated API types, typed errors, correlation IDs, and basic CI.
+- Define time conventions, job states, artifacts, clip revisions, uploads, and cancellation.
+- **Acceptance:** two users cannot access one another's projects; local UI/API/worker start reproducibly; CPU-only setup is documented.
 
-## First implementation target
+### Milestone 1 — Upload to manually trimmed downloadable clip
 
-Start with Milestone 1: one local video, a working player and basic timeline, a manually selected range, and a correct export on both platforms. This establishes playback, timing, worker communication, and rendering foundations for the later AI features.
+- Implement multipart upload/finalization, outbox dispatch, ffprobe validation, proxy, waveform, thumbnails, and MP3.
+- Display source/timeline; choose one range; asynchronously export and download MP4/MP3.
+- **Acceptance:** complete path works; part retry and duplicate completion are safe; unsupported/no-audio inputs have clear outcomes; closing tabs preserves jobs; cancellation/restart recovers and frees resources.
+
+### Milestone 2 — Supplied and automatic transcripts
+
+- Parse SRT/VTT, align TXT, integrate faster-whisper, normalize timing, and show seekable transcript.
+- Add revisions, language selection, mismatch feedback, and caches.
+- **Acceptance:** accents/languages, silence, VFR, and audio offsets preserve timing; supplied transcripts skip ASR only when usable; retries reuse audio.
+
+### Milestone 3 — Context-based suggestions
+
+- Implement topic mapping, candidate generation, deterministic time resolution, ranking, and deduplication.
+- Show 4-5 cards/reasons/previews, fewer when appropriate, and budgeted alternatives.
+- **Acceptance:** no invented references; cuts preserve context; topics vary; editors rate coherence/usefulness. Measure token cost and time to first useful suggestion.
+
+### Milestone 4 — Quality filtering and safe boundaries
+
+- Add black/blur/decode/freeze evidence, scene boundaries, coarse-to-dense checks, and candidate replacement.
+- **Acceptance:** annotated footage rejects bad scenes while preserving slides, intentional transitions, and speech. Never pad to five.
+
+### Milestone 5 — Full review workspace
+
+- Add zoomable timeline, transcript search/seek, snapping, trim handles, quality markers, autosave/conflicts, and source/short playback.
+- **Acceptance:** long-video UI remains responsive; keyboard works; reconnect/URL renewal recovers; multiple tabs detect conflicts; review time improves over manual cutting.
+
+### Milestone 6 — Captions, framing, and batch export
+
+- Add crop/fit, caption styling, exact previews, batch jobs, SRT, and immutable render snapshots.
+- **Acceptance:** A/V/caption timing matches the selected revision; portrait/screens remain readable; edits during export do not alter active output.
+
+### Milestone 7 — Performance, recovery, and cost
+
+- Tune model/precision/batching, lazy previews, caches, fair queues, bounded retries, budgets, and retention.
+- **Acceptance:** crashes, duplicate delivery, expired URLs, disk pressure, and cancellation cannot strand projects. Measure warm/cold latency and storage/compute/token cost under concurrency.
+
+### Milestone 8 — Hosted beta
+
+- Deploy staging/production, backups/recovery, monitored jobs, rate limits, privacy/retention/deletion, and dashboards.
+- **Acceptance:** browser journeys on Chrome/Edge Windows and Safari/Chrome macOS; ownership/media authorization checks; limits under load; restore and recovery exercises.
+
+### Milestone 9 — Social publishing, later
+
+- Evaluate OAuth/provider permissions, token storage, format limits, scheduling, and callbacks.
+- Begin after reliable downloads; require explicit user action to publish.
+
+## 14. Performance and validation strategy
+
+Track upload time, queue wait, preparation/transcription/selection time, time to first useful suggestion, review duration, transcription real-time factor, export FPS, peak CPU/GPU memory, scratch usage, and total cost. Separate cold-model startup, warm processing, and upload.
+
+Benchmark CPU development and representative Linux GPU workers. Exercise slow/interrupted uploads, concurrent users, long videos, VFR/audio offsets, rotation, multiple languages, silence, slides, low light, fades, blur, and damaged inputs. Use consented fixtures with editor-labeled quality and meaningful clips.
+
+Cache within ownership boundaries by source checksum/fingerprint, pipeline/model/prompt/settings, and transcript/edit revision. Avoid cross-user deduplication initially. Crop changes invalidate renders, transcript changes invalidate context, and neither requires repeated audio extraction.
+
+Set latency/quality release targets from the first measured slice. Architecture choices are proposals; performance is not promised before measurement.
+
+## 15. First implementation task list
+
+1. Agree on limits, languages, duration, retention, and processing-cost ceiling.
+2. Create web/API/worker manifests and locks; retire legacy desktop scaffold in that implementation PR.
+3. Add local PostgreSQL/Redis/storage configuration and CPU worker container.
+4. Implement authenticated project/upload contracts and ownership checks.
+5. Upload, finalize, verify, and dispatch via database outbox.
+6. Add bounded ffprobe/FFmpeg preparation and durable progress/cancellation.
+7. Show proxy, waveform, and one editable range.
+8. Render an immutable revision; authorize MP4/MP3 downloads.
+9. Exercise retry, tab closure, worker restart, duplicate dispatch, and two-user isolation.
+10. Record latency/cost baseline, then add transcription before AI suggestions.
+
+This slice proves the entire web media path and is the practical starting point for implementation and testing.

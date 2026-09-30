@@ -7,11 +7,12 @@ Use one integration branch, `main`, with short-lived topic branches and pull req
 | Branch | Starting responsibility |
 | --- | --- |
 | `main` | Shared integration baseline |
-| `feature/desktop-ui` | React UI and Tauri shell |
+| `feature/desktop-ui` | Historical desktop work; superseded by future `feature/web-ui` topics |
+| `feature/initial-implementation-plan` | Current web plan, Figma review, and initial foundation |
 | `feature/media-pipeline` | Python worker, media extraction, and quality filtering |
 | `feature/ai-highlights` | Transcription/AI adapters and context-aware clip selection |
 
-All starter branches initially point at the same structure commit. Assign one owner per active branch. Agree on changes to `packages/contracts` before dependent UI and engine work. These branches are starting points, not permanent silos; replace them with specific topic branches as work is split.
+Assign one owner per active branch. Agree on API contracts before dependent UI/worker changes. Use focused topics such as `feature/web-ui`, `feature/upload-api`, and `feature/job-worker` for later parallel team work; those topic names are recommendations, not branches created by this update. Retain the current plan branch for the owner's initial review request.
 
 ## Daily work
 
@@ -27,6 +28,6 @@ Use `feature/<task>`, `fix/<task>`, and `chore/<task>`. Create a temporary `rele
 
 ## Repository settings to add when the team is ready
 
-Configure a main-branch ruleset requiring PR review, blocking force pushes and deletion, and requiring Windows/macOS checks once build workflows exist. A repository owner must configure review ownership and give teammates access. These settings and invitations are not applied by this structure commit.
+Configure a main-branch ruleset requiring PR review, blocking force pushes/deletion, and requiring frontend/backend checks once workflows exist. Browser acceptance covers Windows Chrome/Edge and macOS Safari/Chrome; server processing targets Linux containers. An owner configures access/reviews. These settings and invitations are not applied by this documentation.
 
 No CI checks are claimed yet. Establish formatting, type checks, focused tests, and platform build jobs when the corresponding application manifests and code are introduced.

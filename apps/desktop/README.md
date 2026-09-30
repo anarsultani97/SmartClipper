@@ -1,5 +1,7 @@
 # Desktop application
 
+Historical scaffold: superseded by the web direction in [ADR 0002](../../docs/architecture/0002-web-stack.md). New UI implementation belongs in `apps/web`; this shell is not an active build target.
+
 Planned stack: Tauri 2, React, TypeScript, and Vite.
 
 - `src/app/`: application composition, navigation, and providers.
