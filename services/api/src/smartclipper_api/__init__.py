@@ -1,0 +1,1 @@
+"""SmartClipper local review API."""

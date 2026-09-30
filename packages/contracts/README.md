@@ -1,9 +1,9 @@
 # Shared contracts
 
-`schemas/` will contain versioned JSON Schemas for UI/shell/worker messages and data models. `examples/` will contain small valid message examples.
+`openapi.json` contains the generated initial HTTP contract. Frontend types live in `apps/web/src/generated/api.d.ts`. Regenerate both after API schema changes; see docs/development/local-development.md. The historical `schemas/` and `examples/` placeholders are reserved for later worker/domain contracts.
 
 Plan for job IDs, command/request IDs, protocol versions, progress events, cancellation, typed errors, video metadata, transcript segments, excluded ranges, and clip plans. Use one documented time unit at the boundary (integer milliseconds) and half-open intervals [start, end). Adapters may preserve finer media time bases internally.
 
-Use framed messages over worker stdin/stdout, with diagnostic logs on stderr. Never mix human log text into protocol output. The desktop shell owns worker lifetime; no local HTTP listener is needed for the initial architecture.
+The web architecture uses FastAPI OpenAPI for HTTP contracts and generated frontend types. Worker job schemas should reference stable project/source/revision IDs. The former desktop framed IPC protocol is superseded; see docs/architecture/0002-web-stack.md.
 
-Schema generation and validation will be implemented before the first end-to-end feature. This directory currently contains no executable contract or schemas.
+The initial project/import/selection/media endpoints are implemented. Full hosted processing-job, transcript, excluded-range, and clip-plan contracts arrive with their respective milestones.
