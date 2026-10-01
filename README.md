@@ -8,7 +8,7 @@ Implemented beta: the selected guided UI, account-owned MP4 imports, large video
 
 The activity dashboard reads existing database aggregates on demand. Personal activity is available to each user; operator access requires an allowlist of authenticated user IDs. No tracking scripts or session replay are added.
 
-This is a **local-storage beta**, with account isolation. Google/Facebook OAuth need registered provider credentials. Local clip scoring is a transparent transcript heuristic; optional hosted semantic ranking needs explicit configuration. No instant-processing or virality promise is made. Production storage/queues, email verification/recovery, retention and load testing remain release gates.
+This is a **local-storage beta**, with account isolation. Google sign-in needs registered provider credentials; see [setup](docs/development/google-sign-in.md). Facebook remains a later UI option. Local clip scoring is a transparent transcript heuristic; optional hosted semantic ranking needs explicit configuration. No instant-processing or virality promise is made. Production storage/queues, email verification/recovery, retention and load testing remain release gates.
 
 ## Start locally
 
@@ -30,7 +30,7 @@ uv run python -m smartclipper_api.worker
 npm run dev
 ~~~
 
-Open http://127.0.0.1:5173 and create an account. Only the guided direction remains. The API docs are at http://127.0.0.1:8000/docs.
+Open http://127.0.0.1:5173 to enter the main workspace directly. Import, generate and edit as a guest; sign in when downloading. Only the guided direction remains. The API docs are at http://127.0.0.1:8000/docs.
 
 Import an MP4 (up to 3 GB / 30 minutes), choose language/platform/length, wait for preparation and generate shorts. First use downloads the local speech model. Review each short, toggle captions, select music/cover and render a download. Current exports are 720×1280 and reuse the prepared proxy. One persistent worker is protected by a file lock; interrupted work becomes failed/retryable. Older ownerless projects require explicit operator assignment.
 

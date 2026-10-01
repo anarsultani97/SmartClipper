@@ -12,7 +12,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
-from .auth import require_user
+from .auth import require_account, require_user
 from .database import Job, Short, User
 from .pipeline import short_folder
 from .rendering import MUSIC
@@ -20,6 +20,7 @@ from .schemas import GenerateOptions, JobView, ShortEdit, ShortView, TranscriptU
 from .transcription import caption_text, parse_srt
 
 CurrentUser = Annotated[User, Depends(require_user)]
+AccountUser = Annotated[User, Depends(require_account)]
 
 
 def short_view(short):
@@ -199,7 +200,7 @@ def install_short_routes(app, settings, sessions, get_project):
             return short_view(get_short(db, short_id, user))
 
     @app.post("/api/v1/shorts/{short_id}/export", status_code=202, response_model=JobView)
-    def queue_export(short_id: str, user: CurrentUser):
+    def queue_export(short_id: str, user: AccountUser):
         with sessions() as db:
             short = get_short(db, short_id, user)
             if busy(db, short.project_id):
@@ -225,6 +226,8 @@ def install_short_routes(app, settings, sessions, get_project):
 
     @app.get("/api/v1/shorts/{short_id}/media/{kind}")
     def short_media(short_id: str, kind: str, user: CurrentUser, job_id: str | None = None):
+        if kind == "export" and user.is_guest:
+            raise HTTPException(401, "Sign in to download your shorts.")
         with sessions() as db:
             short = get_short(db, short_id, user)
             if db.get(Job, short.job_id).status != "ready":

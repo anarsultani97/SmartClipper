@@ -27,8 +27,12 @@ LANGUAGES = {"en", "es", "zh", "hi", "ar", "pt", "bn", "ru", "ja", "fr", "tr"}
 
 class Credentials(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
     name: str = Field(default="Creator", min_length=1, max_length=80)
+
+
+class SignupCredentials(Credentials):
+    password: str = Field(min_length=8, max_length=128)
 
 
 class GenerateOptions(BaseModel):

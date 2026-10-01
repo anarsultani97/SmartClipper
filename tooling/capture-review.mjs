@@ -6,7 +6,9 @@ try {
   const page=await browser.newPage({viewport:{width:1440,height:1000},deviceScaleFactor:1});
   await page.route('**/api/v1/auth/me',route=>route.fulfill({status:401,json:{detail:'Sign in'}}));
   await page.route('**/api/v1/auth/providers',route=>route.fulfill({json:{google:false,facebook:false}}));
-  await page.goto('http://127.0.0.1:5173/');await page.getByRole('button',{name:'Sign in'}).waitFor();await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:dir+'/sign-in.png',fullPage:true});
+  await page.route('**/api/v1/auth/guest',route=>route.fulfill({status:201,json:{id:'guest-fixture',name:'Guest workspace',email:'',csrf:'fixture',is_guest:true}}));
+  await page.route('**/api/v1/projects',route=>route.fulfill({json:[]}));
+  await page.goto('http://127.0.0.1:5173/');await page.getByRole('button',{name:'Sign in'}).click();await page.getByLabel('Email address').waitFor();await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:dir+'/sign-in.png',fullPage:true});
   await page.unroute('**/api/v1/auth/me');await page.route('**/api/v1/auth/me',route=>route.fulfill({json:{id:'ui-fixture',name:'UI fixture',email:'fixture@example.com',csrf:'fixture'}}));
   await page.route('**/api/v1/projects',route=>route.fulfill({json:[]}));
   await page.goto('http://127.0.0.1:5173/');await page.getByRole('button',{name:'Choose video'}).waitFor();await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:dir+'/guided.png',fullPage:true});

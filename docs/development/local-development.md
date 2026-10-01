@@ -29,7 +29,7 @@ Import up to 3 GB/30 minutes, choose language/platform/length/count, wait for pr
 
 ## Optional providers
 
-Google: register a web OAuth client and the exact redirect URI `http://127.0.0.1:5173/api/v1/auth/google/callback`; set `SMARTCLIPPER_GOOGLE_CLIENT_ID` and `SMARTCLIPPER_GOOGLE_CLIENT_SECRET` in `.env`.
+Google: follow [Google sign-in setup](google-sign-in.md), register both localhost and 127.0.0.1 callbacks, and set `SMARTCLIPPER_GOOGLE_CLIENT_ID` and `SMARTCLIPPER_GOOGLE_CLIENT_SECRET` in `.env`.
 
 Facebook: register your Meta app, enable Facebook Login, register `/api/v1/auth/facebook/callback` under the same public origin, configure client ID/secret and the Graph API version supported by that app. Meta app mode, roles and review requirements determine who can consent.
 
@@ -84,3 +84,5 @@ node tooling/check-live-review.mjs
 It privately downloads two 180-second FLOSS Weekly excerpts, signs into an isolated review account, performs actual local speech recognition, generates up to five clips, checks thumbnails/byte ranges and renders exports. Evidence goes to ignored `.cache/podcast-generation-smoke.json`; credentials stay in ignored `.cache/review-account.json` and are never printed. Source URLs/rights can change; do not redistribute third-party media.
 
 `node tooling/capture-review.mjs` produces deterministic guided/sign-in/mobile/activity UI screenshots for documentation. Mocked screenshot data is labeled as a UI fixture, separate from the actual media acceptance run.
+
+The main page opens as a private guest workspace. Registration/sign-in is requested for downloads; existing guest projects move into the account after successful authentication. Guest cookies expire after 24 hours, so sign in to keep access. Facebook is hidden from the account page for now.

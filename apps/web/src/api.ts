@@ -1,6 +1,12 @@
 import type { components } from "./generated/api";
 export type Project = components["schemas"]["ProjectView"];
-export type User = { id: string; name: string; email: string; csrf: string };
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  csrf: string;
+  is_guest?: boolean;
+};
 export type Options = {
   language: string;
   platform: string;
@@ -20,15 +26,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { ...init?.headers, ...(csrf ? { "X-CSRF-Token": csrf } : {}) },
   });
+  const data = await response.json().catch(() => {
+    throw new Error(
+      "We couldn't reach the app service. Please try again shortly.",
+    );
+  });
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
     throw new Error(
       typeof data.detail === "string"
         ? data.detail
-        : "The request could not be completed.",
+        : Array.isArray(data.detail)
+          ? data.detail
+              .map(
+                (item: { loc?: string[]; msg?: string }) =>
+                  `${item.loc?.at(-1) || "Input"}: ${item.msg || "Check this value."}`,
+              )
+              .join(" ")
+          : "The request could not be completed.",
     );
   }
-  return response.json();
+  return data;
 }
 export const listProjects = () => request<Project[]>("/projects");
 export const removeQueuedVideo = (id: string) =>
@@ -39,6 +56,8 @@ const json = (method: string, body: unknown) => ({
   body: JSON.stringify(body),
 });
 export const currentUser = () => request<User>("/auth/me");
+export const guestWorkspace = () =>
+  request<User>("/auth/guest", { method: "POST" });
 export const providers = () =>
   request<{ google: boolean; facebook: boolean }>("/auth/providers");
 export const authenticate = (

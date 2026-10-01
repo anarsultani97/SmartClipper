@@ -13,6 +13,7 @@ import {
 import * as api from "./api";
 import { navigate } from "./App";
 import { formatTime } from "./media";
+import { useAuthGate } from "./AuthGate";
 
 function CaptionPlayer({ short }: { short: api.Short }) {
   const video = useRef<HTMLVideoElement>(null);
@@ -94,9 +95,20 @@ export function ClipWorkspace({
   onError: (e: unknown) => void;
 }) {
   const [draft, setDraft] = useState(short);
+  const { isGuest, requestSignIn } = useAuthGate();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(short);
+  const editable = (value: api.Short) => [
+    value.title,
+    value.subtitles,
+    value.subtitle_language,
+    value.music,
+    value.thumbnail,
+    value.thumbnail_style,
+    value.thumbnail_text,
+  ];
+  const dirty =
+    JSON.stringify(editable(draft)) !== JSON.stringify(editable(short));
   const stale = draft.revision !== short.revision;
   const activeExport = jobs.find(
     (j) =>
@@ -135,6 +147,10 @@ export function ClipWorkspace({
       const result = dirty ? await api.saveShort(draft) : short;
       setDraft(result);
       onSaved(result);
+      if (isGuest) {
+        requestSignIn();
+        return;
+      }
       await api.exportShort(short.id);
       await refresh();
     } catch (e) {
@@ -349,7 +365,11 @@ export function ClipWorkspace({
               ) : (
                 <Download size={16} />
               )}{" "}
-              {activeExport ? "Rendering…" : "Render download"}
+              {activeExport
+                ? "Rendering…"
+                : isGuest
+                  ? "Sign in to download"
+                  : "Render download"}
             </button>
           </div>
           {failedExport && !activeExport && (
@@ -361,6 +381,12 @@ export function ClipWorkspace({
             <a
               className="download-ready"
               href={api.shortMedia(short.id, "export", exportJob.id)}
+              onClick={(event) => {
+                if (isGuest) {
+                  event.preventDefault();
+                  requestSignIn();
+                }
+              }}
             >
               <Check size={16} /> Your MP4 is ready. Download short{" "}
               <Download size={16} />
@@ -386,6 +412,7 @@ export function ThumbnailEditor({
   onError: (e: unknown) => void;
 }) {
   const [draft, setDraft] = useState<api.Short | null>(null);
+  const { isGuest, requestSignIn } = useAuthGate();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const frameVideo = useRef<HTMLVideoElement>(null);
@@ -437,6 +464,10 @@ export function ThumbnailEditor({
     };
   }, [project.id, shortId, onError]);
   async function download() {
+    if (isGuest) {
+      requestSignIn();
+      return;
+    }
     if (!draft) return;
     try {
       const image = new Image();

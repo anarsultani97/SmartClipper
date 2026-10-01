@@ -186,6 +186,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/projects/{project_id}/media/{kind}")
     def media(project_id: str, kind: str, user: CurrentUser):
+        if kind == "audio" and user.is_guest:
+            raise HTTPException(401, "Sign in to download your audio.")
         names = {
             "preview": ("preview.mp4", "video/mp4"),
             "thumbnail": ("thumbnail.jpg", "image/jpeg"),

@@ -10,13 +10,33 @@ import {
 } from "lucide-react";
 import * as api from "./api";
 
-export function AuthView({ onLogin }: { onLogin: (user: api.User) => void }) {
+export function AuthView({
+  onLogin,
+  onBack,
+}: {
+  onLogin: (user: api.User) => void;
+  onBack?: () => void;
+}) {
   const [signup, setSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const oauthError = new URLSearchParams(window.location.search).get(
+    "auth_error",
+  );
+  const [error, setError] = useState(
+    oauthError === "account_exists"
+      ? "This email already has an account. Use its original sign-in method."
+      : oauthError
+        ? "Google sign-in could not be completed. Please try again, or continue with email."
+        : "",
+  );
+  const returnQuery = new URLSearchParams(window.location.search);
+  returnQuery.delete("signin");
+  returnQuery.delete("auth_error");
+  const returnPath =
+    window.location.pathname + (returnQuery.size ? `?${returnQuery}` : "");
   const [providers, setProviders] = useState({
     google: false,
     facebook: false,
@@ -72,32 +92,34 @@ export function AuthView({ onLogin }: { onLogin: (user: api.User) => void }) {
         </blockquote>
       </section>
       <section className="auth-form">
+        {onBack && (
+          <button type="button" className="back-link" onClick={onBack}>
+            ← Back to editing
+          </button>
+        )}
         <span className="eyebrow">
           <Sparkles size={15} /> YOUR CREATIVE CORNER
         </span>
         <h2>{signup ? "Make room for your story." : "Good to see you."}</h2>
         <p>
           {signup
-            ? "Create your account and start with one video."
-            : "Sign in to pick up where your story left off."}
+            ? "Create your account to keep your videos and download your shorts."
+            : "Sign in to download your shorts. Your work will come with you."}
         </p>
         <div className="oauth-buttons">
-          {(["google", "facebook"] as const).map((provider) => (
+          {(["google"] as const).map((provider) => (
             <a
               key={provider}
               className={`secondary ${providers[provider] ? "" : "disabled"}`}
               href={
                 providers[provider]
-                  ? `/api/v1/auth/${provider}/start`
+                  ? `/api/v1/auth/${provider}/start?return_to=${encodeURIComponent(returnPath)}`
                   : undefined
               }
               aria-disabled={!providers[provider]}
             >
-              {provider === "google" ? "G" : "f"}
-              <span>
-                Continue with {provider === "google" ? "Google" : "Facebook"}
-              </span>
-              {!providers[provider] && <small>Not configured</small>}
+              G<span>Continue with Google</span>
+              {!providers[provider] && <small>Available soon</small>}
             </a>
           ))}
         </div>
@@ -113,7 +135,7 @@ export function AuthView({ onLogin }: { onLogin: (user: api.User) => void }) {
               onLogin(
                 await api.authenticate(
                   signup,
-                  email,
+                  email.trim(),
                   password,
                   name || "Creator",
                 ),
@@ -154,12 +176,12 @@ export function AuthView({ onLogin }: { onLogin: (user: api.User) => void }) {
               type="password"
               autoComplete={signup ? "new-password" : "current-password"}
               required
-              minLength={10}
+              minLength={signup ? 8 : 1}
               maxLength={128}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <small>At least 10 characters.</small>
+            {signup && <small>At least 8 characters.</small>}
           </label>
           {error && (
             <p role="alert" className="alert">
@@ -189,7 +211,8 @@ export function AuthView({ onLogin }: { onLogin: (user: api.User) => void }) {
         </p>
         <small className="hint">
           This beta does not yet offer email verification or password recovery.
-          Google and Facebook become available once configured.
+          You can use email now; Google sign-in will be available when setup is
+          complete.
         </small>
       </section>
     </main>

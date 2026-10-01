@@ -56,6 +56,11 @@ beforeEach(() => {
   vi.resetAllMocks();
   window.history.replaceState(null, "", "/");
   vi.mocked(api.currentUser).mockResolvedValue(user);
+  vi.mocked(api.guestWorkspace).mockResolvedValue({
+    ...user,
+    id: "guest",
+    is_guest: true,
+  });
   vi.mocked(api.listProjects).mockResolvedValue([]);
   vi.mocked(api.providers).mockResolvedValue({
     google: false,
@@ -86,6 +91,7 @@ it("does not restore a previous account's projects from a delayed poll", async (
   await act(async () => {
     finish([{ ...project, filename: "private-first-account.mp4" }]);
   });
+  await userEvent.click(await screen.findByRole("button", { name: "Sign in" }));
   await userEvent.type(
     screen.getByLabelText("Email address"),
     "second@example.com",
@@ -318,6 +324,7 @@ it("uses email signup while unavailable OAuth providers are disabled", async () 
   vi.mocked(api.currentUser).mockRejectedValue(new Error("401"));
   vi.mocked(api.authenticate).mockResolvedValue(user);
   render(<App />);
+  await userEvent.click(await screen.findByRole("button", { name: "Sign in" }));
   await userEvent.click(
     await screen.findByRole("button", { name: "Create an account" }),
   );
@@ -339,6 +346,25 @@ it("uses email signup while unavailable OAuth providers are disabled", async () 
     "test-password-123",
     "Creator",
   );
+});
+it("opens the main workspace for visitors and asks for sign-in only at download", async () => {
+  window.history.replaceState(null, "", "/projects/ready/shorts");
+  vi.mocked(api.currentUser).mockRejectedValue(new Error("Please sign in"));
+  vi.mocked(api.listProjects).mockResolvedValue([project]);
+  vi.mocked(api.shorts).mockResolvedValue([short]);
+  vi.mocked(api.saveShort).mockResolvedValue(short);
+  render(<App />);
+  await screen.findByLabelText("Short title");
+  expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Sign in to download" }),
+  );
+  expect(await screen.findByLabelText("Email address")).toBeInTheDocument();
+  expect(api.exportShort).not.toHaveBeenCalled();
+  await userEvent.click(
+    screen.getByRole("button", { name: /Back to editing/ }),
+  );
+  expect(await screen.findByLabelText("Short title")).toBeInTheDocument();
 });
 it("allows subtitles off and saves the exact displayed revision", async () => {
   const saved = vi.fn();
@@ -422,4 +448,30 @@ it("only offers downloads for ready exports of the current saved revision", () =
     />,
   );
   expect(screen.queryByText(/Your MP4 is ready/)).not.toBeInTheDocument();
+});
+it("shows a ready download when polling only updates export metadata", () => {
+  const props = {
+    jobs: [] as api.Job[],
+    onSaved: vi.fn(),
+    refresh: vi.fn(),
+    onError: vi.fn(),
+  };
+  const view = render(<ClipWorkspace short={short} {...props} />);
+  const job: api.Job = {
+    id: "current",
+    project_id: "ready",
+    kind: "export",
+    status: "ready",
+    stage: "Ready",
+    error: null,
+    options: { short_id: short.id, revision: short.revision },
+  };
+  view.rerender(
+    <ClipWorkspace
+      short={{ ...short, export_revision: short.revision }}
+      {...props}
+      jobs={[job]}
+    />,
+  );
+  expect(screen.getByText(/Your MP4 is ready/)).toBeInTheDocument();
 });

@@ -1,0 +1,60 @@
+// Opt-in real browser/server/worker acceptance; fixtures and credentials stay ignored.
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+
+const origin = process.env.SMARTCLIPPER_REVIEW_ORIGIN || 'http://localhost:5173';
+const account = { name: 'Guest acceptance', email: `guest-${randomBytes(6).toString('hex')}@example.com`, password: randomBytes(12).toString('hex') };
+const browser = await chromium.launch({ headless: true });
+try {
+  const page = await browser.newPage({ acceptDownloads: true });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Choose video' }).waitFor();
+  assert.equal(await page.getByLabel('Email address').count(), 0);
+  await page.getByLabel('Import video file').setInputFiles('.cache/guest-acceptance.mp4');
+  await page.waitForURL(/\/projects\/[^/]+$/);
+  const projectPath = new URL(page.url()).pathname;
+  await page.getByRole('button', { name: 'Generate shorts' }).waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('Generate shorts') && !button.disabled), undefined, { timeout: 60000 });
+  await page.getByText('Already have a transcript?', { exact: true }).click();
+  await page.getByLabel('Upload SRT transcript').setInputFiles({ name: 'story.srt', mimeType: 'text/plain', buffer: Buffer.from('1\n00:00:00,000 --> 00:00:18,000\nA good short keeps the whole idea together. Start with a clear question, explain the answer, and end with a useful thought the viewer can remember.') });
+  await page.getByText(/Transcript saved/).waitFor();
+  await page.getByLabel('Preferred maximum length').selectOption('30');
+  await page.getByLabel('Number of suggestions').selectOption('1');
+  await page.getByRole('button', { name: 'Generate shorts' }).click();
+  await page.getByText('THE STORY IN THIS CUT', { exact: true }).waitFor({ timeout: 60000 });
+  await page.getByRole('button', { name: 'Sign in to download' }).click();
+  await page.getByRole('button', { name: 'Create an account' }).click();
+  await page.getByLabel('Your name').fill(account.name);
+  await page.getByLabel('Email address').fill(account.email.toUpperCase());
+  await page.getByLabel('Password').fill(account.password);
+  const created = page.waitForResponse(response => response.url().endsWith('/auth/signup') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  assert.equal((await created).status(), 201);
+  await page.getByText('THE STORY IN THIS CUT', { exact: true }).waitFor();
+  assert(new URL(page.url()).pathname.startsWith(projectPath));
+  await page.getByRole('button', { name: 'Render download' }).click();
+  await page.getByText(/Your MP4 is ready/).waitFor({ timeout: 60000 });
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByText(/Your MP4 is ready/).click()]);
+  assert.equal(await download.failure(), null);
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('button', { name: 'Choose video' }).waitFor();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByLabel('Email address').fill(account.email);
+  await page.getByLabel('Password').fill('wrong');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByText('Email or password is incorrect.', { exact: true }).waitFor();
+  await page.getByLabel('Password').fill(account.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose video' }).waitFor();
+  await page.reload();
+  await page.getByRole('button', { name: 'Sign out' }).waitFor();
+  assert.equal(errors.length, 0, errors.join('\n'));
+  await writeFile('.cache/guest-account-acceptance.json', JSON.stringify(account));
+  console.log('Live acceptance passed: guest main page, import/generation/edit preview, gated download, signup/workspace transfer, MP4 download, sign-out, wrong-password feedback, email sign-in and reload persistence.');
+} finally {
+  await browser.close();
+}

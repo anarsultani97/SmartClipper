@@ -34,6 +34,31 @@ test("guided upload is responsive and old direction URLs no longer switch design
     ),
   ).toBe(true);
 });
+test("new visitors see the main page before sign-in and can return from the account page", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/auth/me", (route) =>
+    route.fulfill({ status: 401, json: { detail: "Sign in" } }),
+  );
+  await page.route("**/api/v1/auth/guest", (route) =>
+    route.fulfill({ status: 201, json: { ...user, is_guest: true } }),
+  );
+  await page.route("**/api/v1/projects", (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: "Choose video" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Email address")).toHaveCount(0);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText("Continue with Google")).toBeVisible();
+  await expect(page.getByText("Continue with Facebook")).toHaveCount(0);
+  await page.getByRole("button", { name: /Back to editing/ }).click();
+  await expect(
+    page.getByRole("button", { name: "Choose video" }),
+  ).toBeVisible();
+});
 test("video import opens the persisted project workspace", async ({ page }) => {
   const project = {
     id: "test",
