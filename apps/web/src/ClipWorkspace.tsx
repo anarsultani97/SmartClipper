@@ -7,6 +7,7 @@ import {
   ImagePlus,
   LoaderCircle,
   Music2,
+  Maximize2,
   Save,
   Sparkles,
 } from "lucide-react";
@@ -14,45 +15,220 @@ import * as api from "./api";
 import { navigate } from "./App";
 import { formatTime } from "./media";
 import { useAuthGate } from "./AuthGate";
+import { ProgressRing } from "./ProgressRing";
 
 function CaptionPlayer({ short }: { short: api.Short }) {
   const video = useRef<HTMLVideoElement>(null);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const [groups, setGroups] = useState<api.CaptionGroup[]>([]);
+  const [active, setActive] = useState({ group: -1, word: -1 });
+  const [captionError, setCaptionError] = useState("");
   useEffect(() => {
-    const update = () => {
-      const player = video.current;
-      if (!player) return;
-      for (const track of Array.from(player.textTracks))
-        track.mode = short.subtitles ? "showing" : "disabled";
+    let alive = true;
+    setGroups([]);
+    setCaptionError("");
+    Promise.resolve(api.captionData(short.id, short.subtitle_language))
+      .then((data) => {
+        if (alive && data) setGroups(data.groups);
+      })
+      .catch(() => {
+        if (alive)
+          setCaptionError("Captions could not load. Try reopening this short.");
+      });
+    return () => {
+      alive = false;
     };
-    update();
+  }, [short.id, short.subtitle_language, short.revision]);
+  useEffect(() => {
     const player = video.current;
-    player?.addEventListener("loadedmetadata", update);
-    return () => player?.removeEventListener("loadedmetadata", update);
-  }, [short.subtitles, short.subtitle_language]);
+    if (!player) return;
+    let frame = 0,
+      last = "";
+    const update = () => {
+      const group = groups.findIndex(
+        (g) => player.currentTime >= g.start && player.currentTime < g.end,
+      );
+      const word =
+        group < 0
+          ? -1
+          : groups[group].words.findIndex(
+              (w) =>
+                player.currentTime >= w.start && player.currentTime < w.end,
+            );
+      const key = `${group}:${word}`;
+      if (key !== last) {
+        last = key;
+        setActive({ group, word });
+      }
+    };
+    const tick = () => {
+      update();
+      if (!player.paused) frame = requestAnimationFrame(tick);
+    };
+    const play = () => {
+      cancelAnimationFrame(frame);
+      tick();
+    };
+    const pause = () => {
+      cancelAnimationFrame(frame);
+      update();
+    };
+    player.addEventListener("play", play);
+    player.addEventListener("pause", pause);
+    player.addEventListener("timeupdate", update);
+    player.addEventListener("seeked", update);
+    update();
+    if (!player.paused) play();
+    return () => {
+      cancelAnimationFrame(frame);
+      player.removeEventListener("play", play);
+      player.removeEventListener("pause", pause);
+      player.removeEventListener("timeupdate", update);
+      player.removeEventListener("seeked", update);
+    };
+  }, [groups]);
+  const cue = groups[active.group];
   return (
-    <video
-      ref={video}
-      controls
-      preload="metadata"
-      src={api.shortMedia(short.id, "clip")}
+    <>
+      <div ref={wrapper} className="caption-video">
+        <video
+          ref={video}
+          controls
+          preload="metadata"
+          src={api.shortMedia(short.id, "clip")}
+          poster={
+            short.thumbnails.length || short.thumbnail === 3
+              ? api.shortMedia(short.id, `thumbnail-${short.thumbnail}`) +
+                `?v=${short.revision}`
+              : undefined
+          }
+          controlsList="nofullscreen"
+        />
+        <button
+          className="caption-fullscreen"
+          aria-label="Fullscreen with subtitles"
+          onClick={() =>
+            void wrapper.current?.requestFullscreen().catch(() => {})
+          }
+        >
+          <Maximize2 size={17} />
+        </button>
+        {!!short.subtitles && cue && (
+          <div
+            className={`styled-caption caption-${short.caption_style || "pop"} caption-${short.caption_position || "lower"}`}
+            dir="auto"
+          >
+            {cue.words.length
+              ? cue.words.map((w, i) => (
+                  <span key={i} className={i === active.word ? "spoken" : ""}>
+                    {w.text}{" "}
+                  </span>
+                ))
+              : cue.text}
+          </div>
+        )}
+      </div>
+      {captionError && !!short.subtitles && (
+        <p role="status" className="hint">
+          {captionError}
+        </p>
+      )}
+    </>
+  );
+}
+
+function CaptionEditor({
+  short,
+  resolveShort,
+  onSaved,
+  onError,
+}: {
+  short: api.Short;
+  resolveShort: () => Promise<api.Short | null>;
+  onSaved: (short: api.Short) => void;
+  onError: (e: unknown) => void;
+}) {
+  const [rows, setRows] = useState<api.Caption[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const load = async () => {
+    if (loaded) return;
+    try {
+      setRows(
+        (await api.captionData(short.id, short.subtitle_language)).segments,
+      );
+      setLoaded(true);
+    } catch (e) {
+      onError(e);
+    }
+  };
+  return (
+    <details
+      className="caption-editor"
+      onToggle={(e) => {
+        if (e.currentTarget.open) void load();
+      }}
     >
-      <track
-        key={short.subtitle_language}
-        kind="subtitles"
-        label={
-          short.subtitle_language === "en" ? "English" : "Original language"
-        }
-        srcLang={short.subtitle_language === "en" ? "en" : undefined}
-        src={api.captionsUrl(short.id, short.subtitle_language)}
-        default={!!short.subtitles}
-        onLoad={() => {
-          if (video.current?.textTracks[0])
-            video.current.textTracks[0].mode = short.subtitles
-              ? "showing"
-              : "disabled";
+      <summary>Review & correct transcript</summary>
+      <p className="hint">
+        Correct names, slang or uncertain words. [beep] means a possible tone;
+        missing or muted speech cannot be reconstructed. Edited lines keep
+        phrase timing and lose automatic word highlighting.
+      </p>
+      {rows.map((cue, i) => (
+        <label key={i} className={cue.review ? "caption-review" : ""}>
+          <span>
+            {formatTime(cue.start)}–{formatTime(cue.end)}{" "}
+            {cue.review && "· Review this line"}
+          </span>
+          <textarea
+            dir="auto"
+            maxLength={500}
+            rows={2}
+            value={cue.text}
+            onChange={(e) =>
+              setRows((old) =>
+                old.map((c, j) =>
+                  j === i ? { ...c, text: e.target.value } : c,
+                ),
+              )
+            }
+          />
+        </label>
+      ))}
+      <button
+        className="secondary"
+        disabled={!loaded || busy || rows.some((r) => !r.text.trim())}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const latest = await resolveShort();
+            if (!latest) return;
+            const saved = await api.saveCaptions(
+              latest,
+              short.subtitle_language,
+              rows,
+            );
+            onSaved(saved);
+            setNotice(
+              "Transcript saved. Preview and your next export use these corrections.",
+            );
+          } catch (e) {
+            onError(e);
+          } finally {
+            setBusy(false);
+          }
         }}
-      />
-    </video>
+      >
+        <Save size={15} /> Save transcript
+      </button>
+      {notice && (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      )}
+    </details>
   );
 }
 
@@ -98,10 +274,13 @@ export function ClipWorkspace({
   const { isGuest, requestSignIn } = useAuthGate();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [captionNotice, setCaptionNotice] = useState("");
   const editable = (value: api.Short) => [
     value.title,
     value.subtitles,
     value.subtitle_language,
+    value.caption_style,
+    value.caption_position,
     value.music,
     value.thumbnail,
     value.thumbnail_style,
@@ -176,7 +355,7 @@ export function ClipWorkspace({
             <Captions size={16} />{" "}
             {draft.subtitles ? "Captions on" : "Captions off"}
           </span>
-          <span>Original audio preview</span>
+          <span>Fast preview · HD download</span>
         </div>
       </section>
       <section className="clip-details">
@@ -240,6 +419,42 @@ export function ClipWorkspace({
               }
             />
           </label>
+          <button
+            className={draft.subtitles ? "secondary wide" : "primary wide"}
+            onClick={() => setDraft({ ...draft, subtitles: true })}
+          >
+            <Captions size={17} />{" "}
+            {draft.subtitles ? "Styled subtitles on" : "Add styled subtitles"}
+          </button>
+          {!!draft.subtitles && (
+            <div className="caption-controls">
+              <label>
+                Caption style
+                <select
+                  value={draft.caption_style || "pop"}
+                  onChange={(e) =>
+                    setDraft({ ...draft, caption_style: e.target.value })
+                  }
+                >
+                  <option value="pop">Pop · lime spoken word</option>
+                  <option value="karaoke">Karaoke · golden spoken word</option>
+                  <option value="clean">Clean · white phrases</option>
+                </select>
+              </label>
+              <label>
+                Caption position
+                <select
+                  value={draft.caption_position || "lower"}
+                  onChange={(e) =>
+                    setDraft({ ...draft, caption_position: e.target.value })
+                  }
+                >
+                  <option value="lower">Lower · above app controls</option>
+                  <option value="middle">Middle</option>
+                </select>
+              </label>
+            </div>
+          )}
           <label>
             Subtitle language
             <select
@@ -255,6 +470,24 @@ export function ClipWorkspace({
               )}
             </select>
           </label>
+          <CaptionEditor
+            key={`${short.id}:${draft.subtitle_language}:${short.revision}`}
+            short={draft}
+            resolveShort={() => (dirty ? save() : Promise.resolve(draft))}
+            onSaved={(s) => {
+              setDraft(s);
+              onSaved(s);
+              setCaptionNotice(
+                "Transcript saved. Your preview and next export use these corrections.",
+              );
+            }}
+            onError={onError}
+          />
+          {captionNotice && (
+            <p role="status" className="notice">
+              {captionNotice}
+            </p>
+          )}
           <label>
             <span>
               <Music2 size={16} /> Music for your export
@@ -319,6 +552,12 @@ export function ClipWorkspace({
                   onClick={() => setDraft({ ...draft, thumbnail: t.index })}
                 >
                   <Cover short={draft} index={t.index} />
+                  {t.index === 0 && (
+                    <span className="recommended-cover">Recommended</span>
+                  )}
+                  <span className="sr-only">
+                    {t.reason}. {t.framing}
+                  </span>
                   {draft.thumbnail === t.index && (
                     <span className="chosen-mark">
                       <Check size={13} />
@@ -346,6 +585,13 @@ export function ClipWorkspace({
               style, or upload a cover.
             </p>
           </div>
+          {activeExport && (
+            <ProgressRing
+              compact
+              value={activeExport.progress || 0}
+              label={activeExport.stage}
+            />
+          )}
           <div className="action-row">
             <button
               className="secondary"

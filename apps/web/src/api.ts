@@ -1,5 +1,10 @@
 import type { components } from "./generated/api";
-export type Project = components["schemas"]["ProjectView"];
+type OptionalDefaults<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+// Cached records and older clients can omit newly defaulted fields.
+export type Project = OptionalDefaults<
+  components["schemas"]["ProjectView"],
+  "progress" | "stage" | "shorts_count"
+>;
 export type User = {
   id: string;
   name: string;
@@ -13,9 +18,25 @@ export type Options = {
   duration_seconds: number;
   count: number;
   english_subtitles: boolean;
+  transcription_mode?: "fast" | "balanced" | "accurate";
+  vocabulary?: string;
+  thumbnail_focus?: "auto" | "people" | "gameplay" | "scene";
 };
-export type Job = components["schemas"]["JobView"];
-export type Short = components["schemas"]["ShortView"];
+export type Job = OptionalDefaults<
+  components["schemas"]["JobView"],
+  "progress"
+>;
+type Thumbnail = OptionalDefaults<
+  components["schemas"]["ThumbnailView"],
+  "faces" | "reason" | "framing"
+>;
+export type Short = Omit<
+  OptionalDefaults<
+    components["schemas"]["ShortView"],
+    "caption_style" | "caption_position"
+  >,
+  "thumbnails"
+> & { thumbnails: Thumbnail[] };
 let csrf = "";
 export const setCsrf = (value: string) => {
   csrf = value;
@@ -88,6 +109,8 @@ export const saveShort = (short: Short) =>
       title: short.title,
       subtitles: !!short.subtitles,
       subtitle_language: short.subtitle_language,
+      caption_style: short.caption_style,
+      caption_position: short.caption_position,
       music: short.music,
       thumbnail: short.thumbnail,
       thumbnail_style: short.thumbnail_style,
@@ -100,6 +123,26 @@ export const shortMedia = (id: string, kind: string, job?: string) =>
   `${base}/shorts/${id}/media/${kind}${job ? `?job_id=${encodeURIComponent(job)}` : ""}`;
 export const captionsUrl = (id: string, language: string) =>
   `${base}/shorts/${id}/captions/${language}`;
+export type Caption = components["schemas"]["Caption"];
+export type CaptionGroup = {
+  start: number;
+  end: number;
+  text: string;
+  words: NonNullable<Caption["words"]>;
+};
+export const captionData = (id: string, language: string) =>
+  request<{ segments: Caption[]; groups: CaptionGroup[] }>(
+    `/shorts/${id}/caption-data/${language}`,
+  );
+export const saveCaptions = (
+  short: Short,
+  language: string,
+  segments: Caption[],
+) =>
+  request<Short>(
+    `/shorts/${short.id}/captions`,
+    json("PUT", { revision: short.revision, language, segments }),
+  );
 export const uploadThumbnail = (short: Short, file: File) =>
   request<Short>(`/shorts/${short.id}/thumbnail?revision=${short.revision}`, {
     method: "PUT",
