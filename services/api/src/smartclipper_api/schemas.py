@@ -4,6 +4,31 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
+class VideoEdits(BaseModel):
+    """Small, reversible metadata; never accept arbitrary FFmpeg expressions."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    framing: Literal["vertical", "horizontal"] = "vertical"
+    fit: Literal["fit", "fill"] = "fit"
+    trim_start_ms: int = Field(default=0, ge=0)
+    trim_end_ms: int | None = Field(default=None, gt=0)
+    brightness: float = Field(default=0, ge=-0.3, le=0.3)
+    contrast: float = Field(default=1, ge=0.5, le=1.5)
+    saturation: float = Field(default=1, ge=0, le=2)
+    speed: float = Field(default=1, ge=0.5, le=2)
+    volume: float = Field(default=1, ge=0, le=1)
+    fade_in: float = Field(default=0, ge=0, le=2)
+    fade_out: float = Field(default=0, ge=0, le=2)
+    rotation: Literal[0, 90, 180, 270] = 0
+    flip: bool = False
+
+    @model_validator(mode="after")
+    def ordered_trim(self):
+        if self.trim_end_ms is not None and self.trim_end_ms <= self.trim_start_ms:
+            raise ValueError("Trim end must be after trim start.")
+        return self
+
+
 class ProjectView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -23,6 +48,7 @@ class ProjectView(BaseModel):
     progress: int = 0
     stage: str = "Waiting for worker"
     shorts_count: int = 0
+    video_edits: VideoEdits = Field(default_factory=VideoEdits)
 
 
 LANGUAGES = {"en", "es", "zh", "hi", "ar", "pt", "bn", "ru", "ja", "fr", "tr"}
@@ -77,6 +103,7 @@ class ShortEdit(BaseModel):
     thumbnail: int = Field(default=0, ge=0, le=3)
     thumbnail_style: Literal["bold", "clean", "minimal"] = "bold"
     thumbnail_text: str = Field(default="", max_length=100)
+    video_edits: VideoEdits | None = None
 
 
 class CaptionWord(BaseModel):
@@ -142,6 +169,7 @@ class ShortView(BaseModel):
     quality_note: str
     english_available: bool
     transcript: list[Caption]
+    video_edits: VideoEdits = Field(default_factory=VideoEdits)
 
 
 class JobView(BaseModel):
@@ -159,6 +187,7 @@ class ClipSelection(BaseModel):
     start_ms: int = Field(ge=0)
     end_ms: int = Field(gt=0)
     revision: int = Field(ge=1)
+    video_edits: VideoEdits | None = None
 
     @model_validator(mode="after")
     def valid_range(self):

@@ -17,7 +17,15 @@ from .caption_styles import caption_groups
 from .database import Job, Short, User
 from .pipeline import short_folder
 from .rendering import MUSIC
-from .schemas import CaptionEdit, GenerateOptions, JobView, ShortEdit, ShortView, TranscriptUpload
+from .schemas import (
+    CaptionEdit,
+    GenerateOptions,
+    JobView,
+    ShortEdit,
+    ShortView,
+    TranscriptUpload,
+    VideoEdits,
+)
 from .transcription import caption_text, parse_srt
 
 CurrentUser = Annotated[User, Depends(require_user)]
@@ -45,6 +53,7 @@ def short_view(short):
         "revision",
         "export_revision",
         "quality_note",
+        "video_edits",
     )
     return {
         **{name: getattr(short, name) for name in names},
@@ -126,7 +135,13 @@ def install_short_routes(app, settings, sessions, get_project):
                 id=str(uuid4()),
                 project_id=project_id,
                 kind="generate",
-                options=options.model_dump(),
+                options={
+                    **options.model_dump(),
+                    "source_start_ms": project.start_ms,
+                    "source_end_ms": project.end_ms,
+                    "source_edits": project.video_edits,
+                    "source_revision": project.revision,
+                },
             )
             db.add(job)
             commit_job(db)
@@ -196,11 +211,21 @@ def install_short_routes(app, settings, sessions, get_project):
                     raise HTTPException(422, "Upload a custom thumbnail first.")
             elif edit.thumbnail >= max(1, len(short.thumbnails)):
                 raise HTTPException(422, "This thumbnail did not pass the quality check.")
+            edits = edit.video_edits or VideoEdits.model_validate(short.video_edits)
+            duration_ms = short.end_ms - short.start_ms
+            trim_end = edits.trim_end_ms if edits.trim_end_ms is not None else duration_ms
+            if not edits.trim_start_ms < trim_end <= duration_ms:
+                raise HTTPException(422, "Trim must stay within the suggested short.")
+            if (trim_end - edits.trim_start_ms) / 1000 / edits.speed < 0.5:
+                raise HTTPException(422, "Keep at least half a second in your short.")
+            values = edit.model_dump(exclude={"revision", "video_edits"})
+            if edit.video_edits is not None:
+                values["video_edits"] = edit.video_edits.model_dump()
             changed = db.execute(
                 update(Short)
                 .where(Short.id == short_id, Short.revision == edit.revision)
                 .values(
-                    **edit.model_dump(exclude={"revision"}),
+                    **values,
                     revision=edit.revision + 1,
                     export_revision=None,
                 )
@@ -232,6 +257,7 @@ def install_short_routes(app, settings, sessions, get_project):
                 "captions": captions,
                 "caption_style": short.caption_style,
                 "caption_position": short.caption_position,
+                "video_edits": VideoEdits.model_validate(short.video_edits).model_dump(),
             }
             job = Job(id=str(uuid4()), project_id=short.project_id, kind="export", options=options)
             db.add(job)

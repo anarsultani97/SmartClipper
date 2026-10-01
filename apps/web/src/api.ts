@@ -3,7 +3,7 @@ type OptionalDefaults<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
 // Cached records and older clients can omit newly defaulted fields.
 export type Project = OptionalDefaults<
   components["schemas"]["ProjectView"],
-  "progress" | "stage" | "shorts_count"
+  "progress" | "stage" | "shorts_count" | "video_edits"
 >;
 export type User = {
   id: string;
@@ -33,10 +33,11 @@ type Thumbnail = OptionalDefaults<
 export type Short = Omit<
   OptionalDefaults<
     components["schemas"]["ShortView"],
-    "caption_style" | "caption_position"
+    "caption_style" | "caption_position" | "video_edits"
   >,
   "thumbnails"
 > & { thumbnails: Thumbnail[] };
+export type VideoEdits = components["schemas"]["VideoEdits"];
 let csrf = "";
 export const setCsrf = (value: string) => {
   csrf = value;
@@ -115,6 +116,18 @@ export const saveShort = (short: Short) =>
       thumbnail: short.thumbnail,
       thumbnail_style: short.thumbnail_style,
       thumbnail_text: short.thumbnail_text,
+      video_edits: short.video_edits,
+    }),
+  );
+export const saveProjectEdits = (project: Project, edits: VideoEdits) =>
+  request<Project>(
+    `/projects/${project.id}/selection`,
+    json("PATCH", {
+      revision: project.revision,
+      start_ms: edits.trim_start_ms,
+      end_ms:
+        edits.trim_end_ms ?? Math.floor((project.duration_seconds || 0) * 1000),
+      video_edits: edits,
     }),
   );
 export const exportShort = (id: string) =>

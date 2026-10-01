@@ -7,7 +7,9 @@ import {
   ImagePlus,
   LoaderCircle,
   Music2,
-  Maximize2,
+  Pencil,
+  Play,
+  X,
   Save,
   Sparkles,
 } from "lucide-react";
@@ -16,118 +18,78 @@ import { navigate } from "./App";
 import { formatTime } from "./media";
 import { useAuthGate } from "./AuthGate";
 import { ProgressRing } from "./ProgressRing";
+import {
+  EditedVideoPlayer,
+  FramingToggle,
+  VideoEditor,
+  normalizeEdits,
+  validTrim,
+} from "./VideoEditor";
 
 function CaptionPlayer({ short }: { short: api.Short }) {
-  const video = useRef<HTMLVideoElement>(null);
-  const wrapper = useRef<HTMLDivElement>(null);
   const [groups, setGroups] = useState<api.CaptionGroup[]>([]);
-  const [active, setActive] = useState({ group: -1, word: -1 });
   const [captionError, setCaptionError] = useState("");
   useEffect(() => {
     let alive = true;
     setGroups([]);
     setCaptionError("");
-    Promise.resolve(api.captionData(short.id, short.subtitle_language))
-      .then((data) => {
-        if (alive && data) setGroups(data.groups);
-      })
-      .catch(() => {
-        if (alive)
-          setCaptionError("Captions could not load. Try reopening this short.");
-      });
+    if (short.subtitles) {
+      Promise.resolve(api.captionData(short.id, short.subtitle_language))
+        .then((data) => {
+          if (alive && data) setGroups(data.groups);
+        })
+        .catch(() => {
+          if (alive)
+            setCaptionError(
+              "Captions could not load. Try reopening this short.",
+            );
+        });
+    }
     return () => {
       alive = false;
     };
-  }, [short.id, short.subtitle_language, short.revision]);
-  useEffect(() => {
-    const player = video.current;
-    if (!player) return;
-    let frame = 0,
-      last = "";
-    const update = () => {
-      const group = groups.findIndex(
-        (g) => player.currentTime >= g.start && player.currentTime < g.end,
-      );
-      const word =
-        group < 0
-          ? -1
-          : groups[group].words.findIndex(
-              (w) =>
-                player.currentTime >= w.start && player.currentTime < w.end,
-            );
-      const key = `${group}:${word}`;
-      if (key !== last) {
-        last = key;
-        setActive({ group, word });
-      }
-    };
-    const tick = () => {
-      update();
-      if (!player.paused) frame = requestAnimationFrame(tick);
-    };
-    const play = () => {
-      cancelAnimationFrame(frame);
-      tick();
-    };
-    const pause = () => {
-      cancelAnimationFrame(frame);
-      update();
-    };
-    player.addEventListener("play", play);
-    player.addEventListener("pause", pause);
-    player.addEventListener("timeupdate", update);
-    player.addEventListener("seeked", update);
-    update();
-    if (!player.paused) play();
-    return () => {
-      cancelAnimationFrame(frame);
-      player.removeEventListener("play", play);
-      player.removeEventListener("pause", pause);
-      player.removeEventListener("timeupdate", update);
-      player.removeEventListener("seeked", update);
-    };
-  }, [groups]);
-  const cue = groups[active.group];
+  }, [short.id, short.subtitle_language, short.revision, short.subtitles]);
+  const edits = normalizeEdits(short.video_edits);
+  const durationMs = short.end_ms - short.start_ms;
+  const start = (short.start_ms + edits.trim_start_ms) / 1000;
+  const end = (short.start_ms + (edits.trim_end_ms ?? durationMs)) / 1000;
   return (
     <>
-      <div ref={wrapper} className="caption-video">
-        <video
-          ref={video}
-          controls
-          preload="metadata"
-          src={api.shortMedia(short.id, "clip")}
-          poster={
-            short.thumbnails.length || short.thumbnail === 3
-              ? api.shortMedia(short.id, `thumbnail-${short.thumbnail}`) +
-                `?v=${short.revision}`
-              : undefined
-          }
-          controlsList="nofullscreen"
-        />
-        <button
-          className="caption-fullscreen"
-          aria-label="Fullscreen with subtitles"
-          onClick={() =>
-            void wrapper.current?.requestFullscreen().catch(() => {})
-          }
-        >
-          <Maximize2 size={17} />
-        </button>
-        {!!short.subtitles && cue && (
-          <div
-            className={`styled-caption caption-${short.caption_style || "pop"} caption-${short.caption_position || "lower"}`}
-            dir="auto"
-          >
-            {cue.words.length
-              ? cue.words.map((w, i) => (
-                  <span key={i} className={i === active.word ? "spoken" : ""}>
-                    {w.text}{" "}
-                  </span>
-                ))
-              : cue.text}
-          </div>
-        )}
-      </div>
+      <EditedVideoPlayer
+        src={api.mediaUrl(short.project_id, "preview")}
+        edits={edits}
+        start={start}
+        end={end}
+        label="Short preview"
+        captions={(sourceTime) => {
+          const relativeTime = sourceTime - short.start_ms / 1000;
+          const cue = groups.find(
+            (g) => relativeTime >= g.start && relativeTime < g.end,
+          );
+          if (!short.subtitles || !cue) return null;
+          return (
+            <div
+              className={`styled-caption caption-${short.caption_style || "pop"} caption-${short.caption_position || "lower"}`}
+              dir="auto"
+            >
+              {cue.words.length
+                ? cue.words.map((word, i) => (
+                    <span
+                      key={i}
+                      className={
+                        relativeTime >= word.start && relativeTime < word.end
+                          ? "spoken"
+                          : ""
+                      }
+                    >
+                      {word.text}{" "}
+                    </span>
+                  ))
+                : cue.text}
+            </div>
+          );
+        }}
+      />
       {captionError && !!short.subtitles && (
         <p role="status" className="hint">
           {captionError}
@@ -246,6 +208,7 @@ export function Cover({
       className={`cover cover-${short.thumbnail_style} ${large ? "cover-large" : ""}`}
     >
       <img
+        loading="lazy"
         src={
           api.shortMedia(short.id, `thumbnail-${index}`) +
           `?v=${short.revision}`
@@ -263,14 +226,32 @@ export function ClipWorkspace({
   onSaved,
   refresh,
   onError,
+  index = 0,
+  initialEditing = true,
+  previewActive = true,
+  onActivate = () => {},
 }: {
   short: api.Short;
   jobs: api.Job[];
   onSaved: (short: api.Short) => void;
   refresh: () => Promise<void>;
   onError: (e: unknown) => void;
+  index?: number;
+  initialEditing?: boolean;
+  previewActive?: boolean;
+  onActivate?: () => void;
 }) {
   const [draft, setDraft] = useState(short);
+  const [editing, setEditing] = useState(initialEditing);
+  const previous = useRef(short);
+  const edits = normalizeEdits(draft.video_edits);
+  const durationMs = short.end_ms - short.start_ms;
+  const trimValid = validTrim(edits, durationMs);
+  const setEdits = (value: api.VideoEdits) => {
+    setDraft({ ...draft, video_edits: value });
+    setSaved(false);
+    onActivate();
+  };
   const { isGuest, requestSignIn } = useAuthGate();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -285,9 +266,20 @@ export function ClipWorkspace({
     value.thumbnail,
     value.thumbnail_style,
     value.thumbnail_text,
+    normalizeEdits(value.video_edits),
   ];
   const dirty =
     JSON.stringify(editable(draft)) !== JSON.stringify(editable(short));
+  useEffect(() => {
+    const previousShort = previous.current;
+    setDraft((current) =>
+      JSON.stringify(editable(current)) ===
+      JSON.stringify(editable(previousShort))
+        ? short
+        : current,
+    );
+    previous.current = short;
+  }, [short]);
   const stale = draft.revision !== short.revision;
   const activeExport = jobs.find(
     (j) =>
@@ -306,6 +298,7 @@ export function ClipWorkspace({
     jobs.find((j) => j.kind === "export" && j.options.short_id === short.id)
       ?.status === "failed";
   async function save() {
+    if (!trimValid) return null;
     setBusy(true);
     try {
       const result = await api.saveShort(draft);
@@ -321,6 +314,7 @@ export function ClipWorkspace({
     }
   }
   async function render() {
+    if (!trimValid) return;
     setBusy(true);
     try {
       const result = dirty ? await api.saveShort(draft) : short;
@@ -338,313 +332,467 @@ export function ClipWorkspace({
       setBusy(false);
     }
   }
+  async function editCover() {
+    if (dirty && !(await save())) return;
+    navigate(`/projects/${short.project_id}/shorts?thumbnail=${short.id}`);
+  }
   return (
-    <div className="clip-grid">
-      <section className="clip-preview card">
-        <div className="preview-heading">
-          <span>
-            <Sparkles size={15} /> SUGGESTED SHORT
-          </span>
-          <span>
-            {formatTime((short.end_ms - short.start_ms) / 1000)} · 9:16
-          </span>
-        </div>
-        <CaptionPlayer short={draft} />
-        <div className="player-footer">
-          <span>
-            <Captions size={16} />{" "}
-            {draft.subtitles ? "Captions on" : "Captions off"}
-          </span>
-          <span>Fast preview · HD download</span>
-        </div>
-      </section>
-      <section className="clip-details">
-        <div className="card context-card">
-          <span className="step-label">THE STORY IN THIS CUT</span>
-          <h2>{short.title}</h2>
-          <p className="source-range">
-            From {formatTime(short.start_ms / 1000)} to{" "}
-            {formatTime(short.end_ms / 1000)} in your original video.
+    <article
+      className={`short-card ${editing ? "is-editing" : ""}`}
+      aria-label={`Short ${index + 1}`}
+    >
+      <header className="short-card-heading">
+        <span className="short-number">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <div>
+          <h2 dir="auto">{short.title}</h2>
+          <p>
+            {formatTime((short.start_ms + edits.trim_start_ms) / 1000)}–
+            {formatTime(
+              (short.start_ms + (edits.trim_end_ms ?? durationMs)) / 1000,
+            )}{" "}
+            in original ·{" "}
+            {formatTime(
+              ((edits.trim_end_ms ?? durationMs) - edits.trim_start_ms) /
+                1000 /
+                edits.speed,
+            )}{" "}
+            short
           </p>
-          {short.summary.map((line, i) => (
-            <p key={i} dir="auto">
-              {line}
-            </p>
-          ))}
-          <details>
-            <summary>Read the excerpt transcript</summary>
-            {short.transcript.map((line, i) => (
-              <p key={i} dir="auto">
-                {line.text}
-              </p>
-            ))}
-          </details>
-          <p className="hint quality-note">{short.quality_note}</p>
         </div>
-        <div className="card customize-card">
-          <div className="section-heading">
-            <h2>Make it yours.</h2>
-            <span className="quiet-badge">Small tweaks. Your style.</span>
+        <button
+          className="secondary edit-short-button"
+          aria-label={`${editing ? "Close editor for" : "Edit"} short ${index + 1}`}
+          aria-expanded={editing}
+          onClick={() => {
+            setEditing(!editing);
+            onActivate();
+          }}
+        >
+          {editing ? <X size={16} /> : <Pencil size={16} />}{" "}
+          {editing ? "Close editor" : "Edit short"}
+        </button>
+      </header>
+      <div className="clip-grid">
+        <section className="clip-preview card">
+          <div className="preview-heading">
+            <span>
+              <Sparkles size={15} /> SUGGESTED SHORT
+            </span>
+            <span>
+              {formatTime(
+                ((edits.trim_end_ms ?? durationMs) - edits.trim_start_ms) /
+                  1000 /
+                  edits.speed,
+              )}{" "}
+              · {edits.framing === "horizontal" ? "16:9" : "9:16"}
+            </span>
           </div>
-          {stale && (
-            <div className="notice">
-              This short was updated in another tab.{" "}
-              <button className="text-button" onClick={() => setDraft(short)}>
-                Load latest version
-              </button>
-            </div>
-          )}
-          <label>
-            Short title
-            <input
-              maxLength={100}
-              value={draft.title}
-              onChange={(e) => {
-                setDraft({ ...draft, title: e.target.value });
-                setSaved(false);
-              }}
-            />
-          </label>
-          <label className="toggle-label">
-            <span>
-              <Captions size={18} /> Show subtitles
-              <small>Preview now; include them in your next export.</small>
-            </span>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={!!draft.subtitles}
-              onChange={(e) =>
-                setDraft({ ...draft, subtitles: e.target.checked })
-              }
-            />
-          </label>
-          <button
-            className={draft.subtitles ? "secondary wide" : "primary wide"}
-            onClick={() => setDraft({ ...draft, subtitles: true })}
-          >
-            <Captions size={17} />{" "}
-            {draft.subtitles ? "Styled subtitles on" : "Add styled subtitles"}
-          </button>
-          {!!draft.subtitles && (
-            <div className="caption-controls">
-              <label>
-                Caption style
-                <select
-                  value={draft.caption_style || "pop"}
-                  onChange={(e) =>
-                    setDraft({ ...draft, caption_style: e.target.value })
-                  }
-                >
-                  <option value="pop">Pop · lime spoken word</option>
-                  <option value="karaoke">Karaoke · golden spoken word</option>
-                  <option value="clean">Clean · white phrases</option>
-                </select>
-              </label>
-              <label>
-                Caption position
-                <select
-                  value={draft.caption_position || "lower"}
-                  onChange={(e) =>
-                    setDraft({ ...draft, caption_position: e.target.value })
-                  }
-                >
-                  <option value="lower">Lower · above app controls</option>
-                  <option value="middle">Middle</option>
-                </select>
-              </label>
-            </div>
-          )}
-          <label>
-            Subtitle language
-            <select
-              value={draft.subtitle_language}
-              onChange={(e) =>
-                setDraft({ ...draft, subtitle_language: e.target.value })
-              }
+          <FramingToggle value={edits} onChange={setEdits} />
+          {previewActive ? (
+            <CaptionPlayer short={draft} />
+          ) : (
+            <button
+              className={`short-poster ${edits.framing}`}
+              onClick={onActivate}
+              aria-label={`Preview short ${index + 1}`}
             >
-              <option value="original">Original language</option>
-              {(short.english_available ||
-                short.subtitle_language === "en") && (
-                <option value="en">English</option>
+              {short.thumbnails.length || short.thumbnail === 3 ? (
+                <Cover short={draft} index={draft.thumbnail} />
+              ) : (
+                <span>No cover available</span>
               )}
-            </select>
-          </label>
-          <CaptionEditor
-            key={`${short.id}:${draft.subtitle_language}:${short.revision}`}
-            short={draft}
-            resolveShort={() => (dirty ? save() : Promise.resolve(draft))}
-            onSaved={(s) => {
-              setDraft(s);
-              onSaved(s);
-              setCaptionNotice(
-                "Transcript saved. Your preview and next export use these corrections.",
-              );
-            }}
-            onError={onError}
-          />
-          {captionNotice && (
-            <p role="status" className="notice">
-              {captionNotice}
-            </p>
+              <span className="preview-play">
+                <Play size={19} /> Preview this short
+              </span>
+            </button>
           )}
-          <label>
-            <span>
-              <Music2 size={16} /> Music for your export
-            </span>
-            <select
-              value={draft.music}
-              onChange={(e) => setDraft({ ...draft, music: e.target.value })}
-            >
-              <option value="none">Original audio only</option>
-              <option value="bright">Little lift · bright</option>
-              <option value="calm">Room to think · calm</option>
-              <option value="pulse">Keep moving · energetic</option>
-            </select>
-          </label>
-          <p className="hint">
-            Original instrumental beds, mixed quietly under your voice. Music is
-            applied when you render an export.
-          </p>
-          <details className="music-discovery">
-            <summary>Looking for a trending song?</summary>
-            <p>
-              Find current music in the platform’s own library, then add it
-              there after download. A song’s availability and license can differ
-              by region, account, and platform.
-            </p>
-            <a
-              target="_blank"
-              rel="noreferrer"
-              href="https://ads.tiktok.com/business/creativecenter/music/pc/en"
-            >
-              Discover TikTok music ↗
-            </a>
-            <a
-              target="_blank"
-              rel="noreferrer"
-              href="https://support.google.com/youtube/answer/13486873"
-            >
-              YouTube Shorts music library ↗
-            </a>
-          </details>
-          <div className="thumbnail-section">
-            <div className="section-heading">
-              <h3>The first impression.</h3>
+          {!editing && (
+            <div className="short-quick-actions">
               <button
                 className="text-button"
-                onClick={() =>
-                  navigate(
-                    `/projects/${short.project_id}/shorts?thumbnail=${short.id}`,
-                  )
-                }
+                onClick={() => {
+                  setEditing(true);
+                  onActivate();
+                }}
               >
-                Edit cover <ImagePlus size={14} />
+                <Pencil size={14} /> Trim & adjust
+              </button>
+              <button
+                className="text-button"
+                disabled={busy || stale || !trimValid}
+                onClick={() => void editCover()}
+              >
+                <ImagePlus size={14} /> Edit cover
               </button>
             </div>
-            <div className="thumbnail-options">
-              {short.thumbnails.map((t) => (
-                <button
-                  key={t.index}
-                  className={draft.thumbnail === t.index ? "chosen" : ""}
-                  aria-label={`Choose thumbnail ${t.index + 1}`}
-                  aria-pressed={draft.thumbnail === t.index}
-                  onClick={() => setDraft({ ...draft, thumbnail: t.index })}
-                >
-                  <Cover short={draft} index={t.index} />
-                  {t.index === 0 && (
-                    <span className="recommended-cover">Recommended</span>
-                  )}
-                  <span className="sr-only">
-                    {t.reason}. {t.framing}
-                  </span>
-                  {draft.thumbnail === t.index && (
-                    <span className="chosen-mark">
-                      <Check size={13} />
-                    </span>
-                  )}
-                </button>
-              ))}
-              {short.thumbnail === 3 && (
-                <button
-                  aria-label="Choose uploaded thumbnail"
-                  onClick={() => setDraft({ ...draft, thumbnail: 3 })}
-                >
-                  <Cover short={draft} index={3} />
-                </button>
-              )}
-            </div>
-            {!short.thumbnails.length && (
-              <p className="hint">
-                No cover frame passed the quality check. Upload your own cover
-                in the editor.
+          )}
+          <div className="player-footer">
+            <span>
+              <Captions size={16} />{" "}
+              {draft.subtitles ? "Captions on" : "Captions off"}
+            </span>
+            <span>Fast preview · HD download</span>
+          </div>
+        </section>
+        <section className="clip-details">
+          <details
+            className="card context-card moment-context"
+            open={editing ? true : undefined}
+          >
+            <summary>What’s in this moment?</summary>
+            <span className="step-label">THE STORY IN THIS CUT</span>
+
+            <p className="source-range">
+              From {formatTime(short.start_ms / 1000)} to{" "}
+              {formatTime(short.end_ms / 1000)} in your original video.
+            </p>
+            {short.summary.map((line, i) => (
+              <p key={i} dir="auto">
+                {line}
               </p>
-            )}
-            <p className="hint">
-              Clear frame choices with your title. Edit the text, change the
-              style, or upload a cover.
-            </p>
-          </div>
-          {activeExport && (
-            <ProgressRing
-              compact
-              value={activeExport.progress || 0}
-              label={activeExport.stage}
-            />
+            ))}
+            <details>
+              <summary>Read the excerpt transcript</summary>
+              {short.transcript.map((line, i) => (
+                <p key={i} dir="auto">
+                  {line.text}
+                </p>
+              ))}
+            </details>
+            <p className="hint quality-note">{short.quality_note}</p>
+          </details>
+          {!editing && (
+            <div className="card quick-cover-card">
+              <h3>Pick your cover</h3>
+              <div className="thumbnail-options">
+                {short.thumbnails.map((t) => (
+                  <button
+                    key={t.index}
+                    className={draft.thumbnail === t.index ? "chosen" : ""}
+                    aria-label={`Choose thumbnail ${t.index + 1} for short ${index + 1}`}
+                    aria-pressed={draft.thumbnail === t.index}
+                    onClick={() => setDraft({ ...draft, thumbnail: t.index })}
+                  >
+                    <Cover short={draft} index={t.index} />
+                    {t.index === 0 && (
+                      <span className="recommended-cover">Recommended</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="hint">
+                Choose a clear first impression, or edit your cover.
+              </p>
+            </div>
           )}
-          <div className="action-row">
-            <button
-              className="secondary"
-              disabled={busy || stale || !draft.title.trim()}
-              onClick={() => void save()}
-            >
-              <Save size={16} />
-              {saved && !dirty ? "Saved" : "Save changes"}
-            </button>
-            <button
-              className="primary"
-              disabled={busy || !!activeExport || stale || !draft.title.trim()}
-              onClick={() => void render()}
-            >
-              {busy || activeExport ? (
-                <LoaderCircle className="spin" size={16} />
-              ) : (
-                <Download size={16} />
-              )}{" "}
-              {activeExport
-                ? "Rendering…"
-                : isGuest
-                  ? "Sign in to download"
-                  : "Render download"}
-            </button>
-          </div>
-          {failedExport && !activeExport && (
-            <p role="alert" className="hint">
-              The last export failed. Try rendering again.
-            </p>
+          {editing && (
+            <div className="card customize-card">
+              <div className="section-heading">
+                <h2>Make it yours.</h2>
+                <span className="quiet-badge">Small tweaks. Your style.</span>
+              </div>
+              {stale && (
+                <div className="notice">
+                  This short was updated in another tab.{" "}
+                  <button
+                    className="text-button"
+                    onClick={() => setDraft(short)}
+                  >
+                    Load latest version
+                  </button>
+                </div>
+              )}
+              <VideoEditor
+                value={edits}
+                durationMs={durationMs}
+                onChange={setEdits}
+              />
+              <label>
+                Short title
+                <input
+                  maxLength={100}
+                  value={draft.title}
+                  onChange={(e) => {
+                    setDraft({ ...draft, title: e.target.value });
+                    setSaved(false);
+                  }}
+                />
+              </label>
+              <label className="toggle-label">
+                <span>
+                  <Captions size={18} /> Show subtitles
+                  <small>Preview now; include them in your next export.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={!!draft.subtitles}
+                  onChange={(e) =>
+                    setDraft({ ...draft, subtitles: e.target.checked })
+                  }
+                />
+              </label>
+              <button
+                className={draft.subtitles ? "secondary wide" : "primary wide"}
+                onClick={() => setDraft({ ...draft, subtitles: true })}
+              >
+                <Captions size={17} />{" "}
+                {draft.subtitles
+                  ? "Styled subtitles on"
+                  : "Add styled subtitles"}
+              </button>
+              {!!draft.subtitles && (
+                <div className="caption-controls">
+                  <label>
+                    Caption style
+                    <select
+                      value={draft.caption_style || "pop"}
+                      onChange={(e) =>
+                        setDraft({ ...draft, caption_style: e.target.value })
+                      }
+                    >
+                      <option value="pop">Pop · lime spoken word</option>
+                      <option value="karaoke">
+                        Karaoke · golden spoken word
+                      </option>
+                      <option value="clean">Clean · white phrases</option>
+                    </select>
+                  </label>
+                  <label>
+                    Caption position
+                    <select
+                      value={draft.caption_position || "lower"}
+                      onChange={(e) =>
+                        setDraft({ ...draft, caption_position: e.target.value })
+                      }
+                    >
+                      <option value="lower">Lower · above app controls</option>
+                      <option value="middle">Middle</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+              <label>
+                Subtitle language
+                <select
+                  value={draft.subtitle_language}
+                  onChange={(e) =>
+                    setDraft({ ...draft, subtitle_language: e.target.value })
+                  }
+                >
+                  <option value="original">Original language</option>
+                  {(short.english_available ||
+                    short.subtitle_language === "en") && (
+                    <option value="en">English</option>
+                  )}
+                </select>
+              </label>
+              <CaptionEditor
+                key={`${short.id}:${draft.subtitle_language}:${short.revision}`}
+                short={draft}
+                resolveShort={() => (dirty ? save() : Promise.resolve(draft))}
+                onSaved={(s) => {
+                  setDraft(s);
+                  onSaved(s);
+                  setCaptionNotice(
+                    "Transcript saved. Your preview and next export use these corrections.",
+                  );
+                }}
+                onError={onError}
+              />
+              {captionNotice && (
+                <p role="status" className="notice">
+                  {captionNotice}
+                </p>
+              )}
+              <label>
+                <span>
+                  <Music2 size={16} /> Music for your export
+                </span>
+                <select
+                  value={draft.music}
+                  onChange={(e) =>
+                    setDraft({ ...draft, music: e.target.value })
+                  }
+                >
+                  <option value="none">Original audio only</option>
+                  <option value="bright">Little lift · bright</option>
+                  <option value="calm">Room to think · calm</option>
+                  <option value="pulse">Keep moving · energetic</option>
+                </select>
+              </label>
+              <p className="hint">
+                Original instrumental beds, mixed quietly under your voice.
+                Music is applied when you render an export.
+              </p>
+              <details className="music-discovery">
+                <summary>Looking for a trending song?</summary>
+                <p>
+                  Find current music in the platform’s own library, then add it
+                  there after download. A song’s availability and license can
+                  differ by region, account, and platform.
+                </p>
+                <a
+                  target="_blank"
+                  rel="noreferrer"
+                  href="https://ads.tiktok.com/business/creativecenter/music/pc/en"
+                >
+                  Discover TikTok music ↗
+                </a>
+                <a
+                  target="_blank"
+                  rel="noreferrer"
+                  href="https://support.google.com/youtube/answer/13486873"
+                >
+                  YouTube Shorts music library ↗
+                </a>
+              </details>
+              <div className="thumbnail-section">
+                <div className="section-heading">
+                  <h3>The first impression.</h3>
+                  <button
+                    className="text-button"
+                    disabled={busy || stale || !trimValid}
+                    onClick={() => void editCover()}
+                  >
+                    Edit cover <ImagePlus size={14} />
+                  </button>
+                </div>
+                <div className="thumbnail-options">
+                  {short.thumbnails.map((t) => (
+                    <button
+                      key={t.index}
+                      className={draft.thumbnail === t.index ? "chosen" : ""}
+                      aria-label={`Choose thumbnail ${t.index + 1}`}
+                      aria-pressed={draft.thumbnail === t.index}
+                      onClick={() => setDraft({ ...draft, thumbnail: t.index })}
+                    >
+                      <Cover short={draft} index={t.index} />
+                      {t.index === 0 && (
+                        <span className="recommended-cover">Recommended</span>
+                      )}
+                      <span className="sr-only">
+                        {t.reason}. {t.framing}
+                      </span>
+                      {draft.thumbnail === t.index && (
+                        <span className="chosen-mark">
+                          <Check size={13} />
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                  {short.thumbnail === 3 && (
+                    <button
+                      aria-label="Choose uploaded thumbnail"
+                      onClick={() => setDraft({ ...draft, thumbnail: 3 })}
+                    >
+                      <Cover short={draft} index={3} />
+                    </button>
+                  )}
+                </div>
+                {!short.thumbnails.length && (
+                  <p className="hint">
+                    No cover frame passed the quality check. Upload your own
+                    cover in the editor.
+                  </p>
+                )}
+                <p className="hint">
+                  Clear frame choices with your title. Edit the text, change the
+                  style, or upload a cover.
+                </p>
+              </div>
+            </div>
           )}
-          {exportJob && !dirty && (
-            <a
-              className="download-ready"
-              href={api.shortMedia(short.id, "export", exportJob.id)}
-              onClick={(event) => {
-                if (isGuest) {
-                  event.preventDefault();
-                  requestSignIn();
-                }
+        </section>
+      </div>
+      <footer className="short-card-actions">
+        {" "}
+        {activeExport && (
+          <ProgressRing
+            compact
+            value={activeExport.progress || 0}
+            label={activeExport.stage}
+          />
+        )}
+        {dirty && (
+          <p role="status" className="hint">
+            You have unapplied changes. Apply them to keep this version.
+          </p>
+        )}
+        <div className="action-row">
+          <button
+            className="secondary"
+            disabled={
+              busy || stale || !dirty || !trimValid || !draft.title.trim()
+            }
+            onClick={() => void save()}
+          >
+            <Save size={16} />
+            {saved && !dirty ? "Changes applied" : "Apply changes"}
+          </button>
+          <button
+            className="primary"
+            disabled={
+              busy ||
+              !!activeExport ||
+              stale ||
+              !trimValid ||
+              !draft.title.trim()
+            }
+            onClick={() => void render()}
+          >
+            {busy || activeExport ? (
+              <LoaderCircle className="spin" size={16} />
+            ) : (
+              <Download size={16} />
+            )}{" "}
+            {activeExport
+              ? "Rendering…"
+              : isGuest
+                ? "Sign in to download"
+                : "Render download"}
+          </button>
+          {dirty && (
+            <button
+              className="text-button"
+              disabled={busy}
+              onClick={() => {
+                setDraft(short);
+                setSaved(false);
               }}
             >
-              <Check size={16} /> Your MP4 is ready. Download short{" "}
-              <Download size={16} />
-            </a>
+              Discard changes
+            </button>
           )}
-          <p className="hint">
-            Share the downloaded video in your favorite app. Direct publishing
-            comes later.
-          </p>
         </div>
-      </section>
-    </div>
+        {failedExport && !activeExport && (
+          <p role="alert" className="hint">
+            The last export failed. Try rendering again.
+          </p>
+        )}
+        {exportJob && !dirty && (
+          <a
+            className="download-ready"
+            href={api.shortMedia(short.id, "export", exportJob.id)}
+            onClick={(event) => {
+              if (isGuest) {
+                event.preventDefault();
+                requestSignIn();
+              }
+            }}
+          >
+            <Check size={16} /> Your MP4 is ready. Download short{" "}
+            <Download size={16} />
+          </a>
+        )}
+        <p className="hint">
+          Share the downloaded video in your favorite app. Direct publishing
+          comes later.
+        </p>
+      </footer>
+    </article>
   );
 }
 

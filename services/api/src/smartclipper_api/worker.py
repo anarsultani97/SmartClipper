@@ -287,7 +287,7 @@ def process_one(settings: Settings, sessions, processor=prepare) -> bool:
                     status="ready",
                     progress=100,
                     stage="Ready",
-                    end_ms=min(60000, int(metadata["duration_seconds"] * 1000)),
+                    end_ms=int(metadata["duration_seconds"] * 1000),
                 )
             )
             session.commit()

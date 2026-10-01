@@ -2139,6 +2139,428 @@ details summary {
   font-size: 11px;
   color: #7c8873;
 }
+
+/* Each short is a visible, independent moment. Mount only the selected player. */
+.shorts-feed {
+  display: grid;
+  gap: 28px;
+}
+.shorts-feed-note {
+  margin: 0;
+  color: var(--muted, #71806e);
+  font-size: 13px;
+}
+.short-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  scroll-margin-top: 20px;
+}
+.short-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 26px;
+  border-bottom: 1px solid var(--line);
+}
+.short-number {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: #edf3e5;
+  color: #587543;
+  font-weight: 700;
+}
+.short-card-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.short-card-heading h2 {
+  font-size: 17px;
+  line-height: 1.45;
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+.short-card-heading p {
+  font-size: 12px;
+  color: #75816e;
+  margin: 0;
+}
+.short-card .clip-grid {
+  grid-template-columns: minmax(260px, 0.85fr) minmax(300px, 1fr);
+  padding: 22px 26px;
+  gap: 24px;
+}
+.short-card .clip-preview {
+  position: static;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.short-card .preview-heading {
+  padding: 0 0 12px;
+}
+.short-card .clip-details {
+  gap: 16px;
+}
+.short-card .context-card,
+.short-card .customize-card,
+.quick-cover-card {
+  padding: 20px;
+  background: #fafbf8;
+  border-radius: 12px;
+}
+.moment-context summary {
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.moment-context .step-label {
+  display: block;
+  margin-top: 18px;
+}
+.quick-cover-card h3 {
+  font-size: 14px;
+  margin: 0 0 14px;
+}
+.quick-cover-card .thumbnail-options {
+  max-width: 330px;
+}
+.quick-cover-card .cover {
+  aspect-ratio: 9/12;
+}
+.short-card-actions {
+  padding: 16px 26px 20px;
+  background: #f9fbf6;
+  border-top: 1px solid var(--line);
+}
+.short-card-actions .action-row {
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.short-card-actions > .hint:last-child {
+  margin-bottom: 0;
+}
+.edit-short-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.framing-toggle {
+  display: flex;
+  gap: 3px;
+  background: #eff3e9;
+  border-radius: 10px;
+  padding: 4px;
+  margin: 0 0 14px;
+}
+.framing-toggle button {
+  flex: 1;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #67755b;
+  font-size: 12px;
+  font-weight: 600;
+}
+.framing-toggle button[aria-pressed="true"] {
+  background: white;
+  color: #31523c;
+  box-shadow: 0 1px 4px #263d1914;
+}
+.framing-toggle small {
+  margin-left: 5px;
+  font-weight: 400;
+  color: #809071;
+}
+.edited-player {
+  width: min(100%, 305px);
+  margin: auto;
+  background: #080b09;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.edited-player.horizontal {
+  width: 100%;
+}
+.edited-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9/16;
+  overflow: hidden;
+  background: black;
+}
+.edited-player.horizontal .edited-viewport {
+  aspect-ratio: 16/9;
+}
+.edited-player .edited-viewport video,
+.source-player .edited-viewport video,
+.clip-preview .edited-viewport video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  min-height: 0;
+  max-height: none;
+  max-width: none;
+  aspect-ratio: auto;
+  object-fit: fill;
+  background: transparent;
+}
+.edited-player-controls {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 10px;
+  color: #eef4e8;
+  font-size: 11px;
+}
+.edited-player-controls button {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.edited-player-controls input {
+  flex: 1;
+  min-width: 30px;
+  padding: 0;
+  height: 5px;
+  accent-color: #d5efae;
+}
+.edited-player .styled-caption {
+  font-size: clamp(16px, 1.65vw, 22px);
+  bottom: 18%;
+}
+.edited-player .styled-caption.caption-middle {
+  bottom: 46%;
+}
+.edited-player.horizontal .styled-caption {
+  font-size: clamp(17px, 1.65vw, 24px);
+}
+.edited-player:fullscreen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 0;
+}
+.edited-player:fullscreen .edited-viewport {
+  width: min(100%, calc((100vh - 50px) * 9 / 16));
+  height: calc(100vh - 50px);
+  margin: 0 auto;
+}
+.edited-player.horizontal:fullscreen .edited-viewport {
+  width: min(100%, calc((100vh - 50px) * 16 / 9));
+  height: auto;
+}
+.colour-filter {
+  position: absolute;
+  pointer-events: none;
+}
+.caption-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.short-poster {
+  position: relative;
+  display: block;
+  width: min(100%, 305px);
+  padding: 0;
+  margin: auto;
+  border: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: black;
+}
+.short-poster .cover {
+  aspect-ratio: 9/16;
+}
+.short-poster.horizontal {
+  width: 100%;
+}
+.short-poster.horizontal .cover {
+  aspect-ratio: 16/9;
+}
+.short-poster.horizontal .cover img {
+  object-fit: contain;
+}
+.preview-play {
+  position: absolute;
+  inset: auto 15px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 11px;
+  background: #17281be6;
+  color: white;
+  font-size: 12px;
+  border-radius: 8px;
+}
+.short-quick-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+}
+.video-editor {
+  margin: 6px 0 24px;
+}
+.editor-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 20px 0 10px;
+}
+.editor-section-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  margin: 0;
+}
+.editor-section-heading > span {
+  font-size: 11px;
+  color: #718467;
+}
+.adjustment-grid,
+.trim-inputs,
+.trim-sliders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.trim-sliders {
+  margin-top: 12px;
+}
+.trim-sliders label {
+  font-size: 11px;
+}
+.trim-sliders input,
+.adjustment input[type="range"] {
+  height: 5px;
+  margin: 13px 0;
+  padding: 0;
+  width: 100%;
+  accent-color: #64833f;
+  border: 0;
+}
+.trim-track {
+  position: relative;
+  height: 10px;
+  background: #dce4d4;
+  border-radius: 5px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+.trim-track span {
+  position: absolute;
+  height: 100%;
+  background: #92ac6d;
+  border-radius: 5px;
+}
+.adjustment span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.adjustment output {
+  color: #677e50;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.advanced-edits {
+  border-top: 1px solid var(--line);
+  margin: 10px 0;
+  padding: 14px 0 0;
+}
+.advanced-edits summary {
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.editor-reset {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.editor-validation {
+  color: #a43930;
+  font-size: 12px;
+}
+.source-edit-panel {
+  padding: 20px 24px;
+  border-top: 1px solid var(--line);
+}
+.source-edit-panel > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}
+.source-player .edited-player {
+  border-radius: 0;
+}
+.source-player .edited-viewport {
+  max-height: 66vh;
+}
+.source-player .edited-player-controls {
+  padding: 14px 20px;
+}
+@media (max-width: 1000px) {
+  .short-card .clip-grid {
+    grid-template-columns: 1fr;
+  }
+  .short-card .clip-details {
+    width: 100%;
+  }
+  .short-card .edited-player.horizontal {
+    max-width: 700px;
+  }
+  .quick-cover-card .thumbnail-options {
+    max-width: 300px;
+  }
+}
+@media (max-width: 600px) {
+  .short-card-heading {
+    padding: 16px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .short-card-heading h2 {
+    font-size: 15px;
+  }
+  .edit-short-button {
+    margin-left: 52px;
+  }
+  .short-card .clip-grid {
+    padding: 16px;
+  }
+  .short-card-actions {
+    padding: 14px 16px;
+  }
+  .short-number {
+    width: 34px;
+    height: 34px;
+  }
+  .adjustment-grid,
+  .trim-inputs {
+    gap: 12px;
+  }
+  .source-edit-panel {
+    padding: 16px;
+  }
+}
 .caption-review textarea {
   border-color: #d5aa54;
   background: #fffdf5;

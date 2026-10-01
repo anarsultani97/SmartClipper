@@ -532,6 +532,7 @@ export interface components {
       end_ms: number;
       /** Revision */
       revision: number;
+      video_edits?: components["schemas"]["VideoEdits"] | null;
     };
     /** Credentials */
     Credentials: {
@@ -668,6 +669,7 @@ export interface components {
        * @default 0
        */
       shorts_count: number;
+      video_edits?: components["schemas"]["VideoEdits"];
     };
     /** ShortEdit */
     ShortEdit: {
@@ -720,6 +722,7 @@ export interface components {
        * @default
        */
       thumbnail_text: string;
+      video_edits?: components["schemas"]["VideoEdits"] | null;
     };
     /** ShortView */
     ShortView: {
@@ -771,6 +774,7 @@ export interface components {
       english_available: boolean;
       /** Transcript */
       transcript: components["schemas"]["Caption"][];
+      video_edits?: components["schemas"]["VideoEdits"];
     };
     /** SignupCredentials */
     SignupCredentials: {
@@ -832,6 +836,77 @@ export interface components {
       input?: unknown;
       /** Context */
       ctx?: Record<string, never>;
+    };
+    /**
+     * VideoEdits
+     * @description Small, reversible metadata; never accept arbitrary FFmpeg expressions.
+     */
+    VideoEdits: {
+      /**
+       * Framing
+       * @default vertical
+       * @enum {string}
+       */
+      framing: "vertical" | "horizontal";
+      /**
+       * Fit
+       * @default fit
+       * @enum {string}
+       */
+      fit: "fit" | "fill";
+      /**
+       * Trim Start Ms
+       * @default 0
+       */
+      trim_start_ms: number;
+      /** Trim End Ms */
+      trim_end_ms?: number | null;
+      /**
+       * Brightness
+       * @default 0
+       */
+      brightness: number;
+      /**
+       * Contrast
+       * @default 1
+       */
+      contrast: number;
+      /**
+       * Saturation
+       * @default 1
+       */
+      saturation: number;
+      /**
+       * Speed
+       * @default 1
+       */
+      speed: number;
+      /**
+       * Volume
+       * @default 1
+       */
+      volume: number;
+      /**
+       * Fade In
+       * @default 0
+       */
+      fade_in: number;
+      /**
+       * Fade Out
+       * @default 0
+       */
+      fade_out: number;
+      /**
+       * Rotation
+       * @default 0
+       * @enum {integer}
+       */
+      rotation: 0 | 90 | 180 | 270;
+      /**
+       * Flip
+       * @default false
+       */
+      flip: boolean;
     };
   };
   responses: never;

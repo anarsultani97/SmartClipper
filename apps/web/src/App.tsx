@@ -27,6 +27,12 @@ import { ClipWorkspace, ThumbnailEditor } from "./ClipWorkspace";
 import { ActivityDashboard } from "./ActivityDashboard";
 import { AuthGate, useAuthGate } from "./AuthGate";
 import { ProgressRing } from "./ProgressRing";
+import {
+  EditedVideoPlayer,
+  VideoEditor,
+  normalizeEdits,
+  validTrim,
+} from "./VideoEditor";
 
 export const languages = [
   ["en", "English"],
@@ -904,10 +910,49 @@ function SourceWorkspace({
   const { isGuest, requestSignIn } = useAuthGate();
   const [busy, setBusy] = useState(false);
   const [transcriptLanguage, setTranscriptLanguage] = useState("en");
-  const video = useRef<HTMLVideoElement>(null);
+  const sourceValue = (p: api.Project): api.VideoEdits => ({
+    ...normalizeEdits(p.video_edits),
+    trim_start_ms: p.start_ms,
+    trim_end_ms: p.end_ms || Math.floor((p.duration_seconds || 0) * 1000),
+  });
+  const [draftProject, setDraftProject] = useState(project);
+  const [edits, setEdits] = useState(sourceValue(project));
+  const [editBusy, setEditBusy] = useState(false);
+  const previousProject = useRef(project);
+  const durationMs = Math.floor((project.duration_seconds || 0) * 1000);
+  const dirty =
+    JSON.stringify(edits) !== JSON.stringify(sourceValue(draftProject));
+  useEffect(() => {
+    const previous = previousProject.current;
+    if (JSON.stringify(edits) === JSON.stringify(sourceValue(previous))) {
+      setEdits(sourceValue(project));
+      setDraftProject(project);
+    }
+    previousProject.current = project;
+  }, [project]);
+  async function applyEdits() {
+    if (!validTrim(edits, durationMs)) return null;
+    setEditBusy(true);
+    try {
+      const saved = await api.saveProjectEdits(draftProject, edits);
+      setDraftProject(saved);
+      setEdits(sourceValue(saved));
+      onNotice(
+        "Edits applied. Your next shorts will use this selection and these adjustments.",
+      );
+      await refresh();
+      return saved;
+    } catch (e) {
+      onError(e);
+      return null;
+    } finally {
+      setEditBusy(false);
+    }
+  }
   async function generate() {
     setBusy(true);
     try {
+      if (dirty && !(await applyEdits())) return;
       await api.generate(project.id, options);
       navigate(`/projects/${project.id}/shorts`);
     } catch (e) {
@@ -943,37 +988,17 @@ function SourceWorkspace({
           {project.status !== "failed" &&
           (project.status === "ready" || localPreview) ? (
             <>
-              <video
-                ref={video}
-                controls
-                preload="metadata"
-                src={
-                  project.status === "ready"
-                    ? api.mediaUrl(project.id, "preview")
-                    : localPreview
-                }
-                poster={
-                  project.status === "ready"
-                    ? api.mediaUrl(project.id, "thumbnail")
-                    : undefined
-                }
-              />
-              <div className="source-timeline">
-                <span>0:00</span>
-                <input
-                  type="range"
-                  aria-label="Seek original video"
-                  min={0}
-                  max={project.duration_seconds || 0}
-                  step={0.1}
-                  defaultValue={0}
-                  onChange={(e) => {
-                    if (video.current)
-                      video.current.currentTime = Number(e.target.value);
-                  }}
+              {project.status === "ready" ? (
+                <EditedVideoPlayer
+                  src={api.mediaUrl(project.id, "preview")}
+                  edits={{ ...edits, framing: "horizontal", fit: "fit" }}
+                  start={edits.trim_start_ms / 1000}
+                  end={(edits.trim_end_ms ?? durationMs) / 1000}
+                  label="Original video preview"
                 />
-                <span>{formatTime(project.duration_seconds || 0)}</span>
-              </div>
+              ) : (
+                <video controls preload="metadata" src={localPreview} />
+              )}
               <div className="player-footer">
                 <span>
                   <Film size={16} />{" "}
@@ -995,6 +1020,45 @@ function SourceWorkspace({
                   </a>
                 )}
               </div>
+              {project.status === "ready" && (
+                <details className="source-edit-panel">
+                  <summary>Edit original video · trim, picture & sound</summary>
+                  <VideoEditor
+                    source
+                    value={edits}
+                    durationMs={durationMs}
+                    onChange={setEdits}
+                  />
+                  <div className="action-row">
+                    <button
+                      className="primary"
+                      disabled={
+                        editBusy ||
+                        busy ||
+                        !dirty ||
+                        !validTrim(edits, durationMs)
+                      }
+                      onClick={() => void applyEdits()}
+                    >
+                      {editBusy ? "Applying…" : "Apply changes"}
+                    </button>
+                    {dirty && (
+                      <button
+                        className="text-button"
+                        disabled={editBusy}
+                        onClick={() => setEdits(sourceValue(draftProject))}
+                      >
+                        Discard changes
+                      </button>
+                    )}
+                  </div>
+                  <p className="hint">
+                    {dirty
+                      ? "You have unapplied changes. Generating shorts will apply them first."
+                      : "Your original upload stays intact. Applied edits are used for your next suggestions."}
+                  </p>
+                </details>
+              )}
             </>
           ) : (
             <div className="preparing">
@@ -1038,7 +1102,12 @@ function SourceWorkspace({
           <Preferences value={options} onChange={setOptions} />
           <button
             className="primary wide"
-            disabled={project.status !== "ready" || busy}
+            disabled={
+              project.status !== "ready" ||
+              busy ||
+              editBusy ||
+              !validTrim(edits, durationMs)
+            }
             onClick={() => void generate()}
           >
             {busy ? (
@@ -1121,7 +1190,7 @@ function Results({
 }) {
   const [shorts, setShorts] = useState<api.Short[]>([]);
   const [jobs, setJobs] = useState<api.Job[]>([]);
-  const [selected, setSelected] = useState("");
+  const [previewId, setPreviewId] = useState("");
   const loadSequence = useRef(0);
   const active = useRef(false);
   const load = useCallback(async () => {
@@ -1132,9 +1201,9 @@ function Results({
         api.jobs(project.id),
       ]);
       if (!active.current || sequence !== loadSequence.current) return;
-      setShorts(s);
+      setShorts([...s].sort((a, b) => a.start_ms - b.start_ms));
       setJobs(j);
-      setSelected((old) =>
+      setPreviewId((old) =>
         s.some((item) => item.id === old) ? old : s[0]?.id || "",
       );
     } catch (e) {
@@ -1151,7 +1220,7 @@ function Results({
       window.clearInterval(timer);
     };
   }, [load]);
-  const current = shorts.find((s) => s.id === selected);
+
   const generating = jobs.find(
     (j) => j.kind === "generate" && ["queued", "processing"].includes(j.status),
   );
@@ -1195,7 +1264,7 @@ function Results({
           </div>
         </div>
       )}
-      {generating && !current && (
+      {generating && !shorts.length && (
         <section className="generation-stage card">
           <ProgressRing
             value={generating.progress || 0}
@@ -1225,38 +1294,36 @@ function Results({
           </button>
         </div>
       )}
-      {shorts.length > 0 && (
-        <div className="short-selector" aria-label="Suggested shorts">
-          {shorts.map((s, i) => (
-            <button
-              key={s.id}
-              className={s.id === selected ? "active" : ""}
-              onClick={() => setSelected(s.id)}
-            >
-              <span>{String(i + 1).padStart(2, "0")}</span>
-              <div>
-                {s.title}
-                <small>
-                  {formatTime(s.start_ms / 1000)}–{formatTime(s.end_ms / 1000)}
-                </small>
-              </div>
-            </button>
+      {shorts.length > 0 ? (
+        <section
+          className="shorts-feed"
+          aria-label="All suggested shorts in timeline order"
+        >
+          <p className="shorts-feed-note">
+            {shorts.length} shorts to explore · earliest moment first. Preview
+            any card or choose Edit short.
+          </p>
+          {shorts.map((short, index) => (
+            <ClipWorkspace
+              key={short.id}
+              short={short}
+              index={index}
+              initialEditing={false}
+              previewActive={previewId === short.id}
+              onActivate={() => setPreviewId(short.id)}
+              jobs={jobs}
+              refresh={load}
+              onError={onError}
+              onSaved={(saved) => {
+                if (!active.current) return;
+                ++loadSequence.current;
+                setShorts((old) =>
+                  old.map((s) => (s.id === saved.id ? saved : s)),
+                );
+              }}
+            />
           ))}
-        </div>
-      )}
-      {current ? (
-        <ClipWorkspace
-          key={current.id}
-          short={current}
-          jobs={jobs}
-          onSaved={(saved) => {
-            if (!active.current) return;
-            ++loadSequence.current;
-            setShorts((old) => old.map((s) => (s.id === saved.id ? saved : s)));
-          }}
-          refresh={load}
-          onError={onError}
-        />
+        </section>
       ) : (
         !generating &&
         !failed && (
