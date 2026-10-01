@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -124,3 +126,38 @@ def test_oauth_return_paths_are_internal_only():
         safe_return_path("/projects/a-b/shorts?thumbnail=c-d")
         == "/projects/a-b/shorts?thumbnail=c-d"
     )
+
+
+def test_upload_finishing_during_signup_is_owned_by_the_new_account(app):
+    started, finish = Event(), Event()
+
+    def chunks():
+        started.set()
+        if not finish.wait(10):
+            raise RuntimeError("Timed out waiting for concurrent sign-in")
+        yield b"uploaded-video"
+
+    with TestClient(app) as upload_client, TestClient(app) as auth_client:
+        visitor = guest(upload_client)
+        auth_client.cookies.update(upload_client.cookies)
+        auth_client.headers["X-CSRF-Token"] = visitor["csrf"]
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(
+                upload_client.post, "/api/v1/projects?filename=long-upload.mp4", content=chunks()
+            )
+            try:
+                assert started.wait(5)
+                signed = auth_client.post(
+                    "/api/v1/auth/signup",
+                    json={"email": "concurrent@example.com", "password": "eight888"},
+                )
+                assert signed.status_code == 201, signed.text
+            finally:
+                finish.set()
+            uploaded = pending.result(timeout=5)
+        assert uploaded.status_code == 202, uploaded.text
+        visible = auth_client.get("/api/v1/projects").json()
+        assert [item["id"] for item in visible] == [uploaded.json()["id"]]
+        with app.state.sessions() as db:
+            assert db.get(User, visitor["id"]).claimed_by == signed.json()["id"]
+            assert db.get(Project, uploaded.json()["id"]).owner_id == signed.json()["id"]

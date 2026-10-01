@@ -104,6 +104,27 @@ it("does not restore a previous account's projects from a delayed poll", async (
     screen.queryByText("private-first-account.mp4"),
   ).not.toBeInTheDocument();
 });
+it("clears the old account library even when guest setup fails after logout", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([project]);
+  vi.mocked(api.logout).mockResolvedValue({});
+  vi.mocked(api.guestWorkspace).mockRejectedValue(
+    new Error("Service temporarily unavailable"),
+  );
+  render(<App />);
+  await screen.findByRole("button", { name: "Sign out" });
+  await waitFor(() =>
+    expect(screen.getAllByText("podcast.mp4").length).toBeGreaterThan(0),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  await screen.findByText("Service temporarily unavailable");
+  expect(screen.queryByText("podcast.mp4")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Sign out" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Choose video" }),
+  ).toBeInTheDocument();
+});
 it("keeps a newly uploaded video when an older empty poll finishes", async () => {
   let finish!: (value: api.Project[]) => void;
   vi.mocked(api.listProjects).mockReturnValueOnce(

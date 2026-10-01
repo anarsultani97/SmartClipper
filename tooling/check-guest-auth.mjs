@@ -5,6 +5,8 @@ import { randomBytes } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 
 const origin = process.env.SMARTCLIPPER_REVIEW_ORIGIN || 'http://localhost:5173';
+const health = await fetch(origin + '/api/v1/health');
+assert(health.ok && health.headers.get('content-type')?.includes('application/json'), 'Start API/frontend and verify the frontend API proxy before running acceptance.');
 const account = { name: 'Guest acceptance', email: `guest-${randomBytes(6).toString('hex')}@example.com`, password: randomBytes(12).toString('hex') };
 const browser = await chromium.launch({ headless: true });
 try {

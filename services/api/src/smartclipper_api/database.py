@@ -52,6 +52,9 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(80))
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_guest: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    claimed_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", name="fk_guest_claim_account"), nullable=True
+    )
 
 
 class Identity(Base):

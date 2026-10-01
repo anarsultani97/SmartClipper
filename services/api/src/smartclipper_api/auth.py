@@ -107,10 +107,16 @@ def install_auth(app, settings, sessions):
         lifetime = 86400 if user.is_guest else 7 * 86400
         with sessions() as db:
             if guest_id and guest_id != user.id:
-                db.execute(
-                    update(Project).where(Project.owner_id == guest_id).values(owner_id=user.id)
+                claimed = db.execute(
+                    update(User)
+                    .where(User.id == guest_id, User.is_guest.is_(True), User.claimed_by.is_(None))
+                    .values(claimed_by=user.id)
                 )
-                db.execute(delete(LoginSession).where(LoginSession.user_id == guest_id))
+                if claimed.rowcount == 1:
+                    db.execute(
+                        update(Project).where(Project.owner_id == guest_id).values(owner_id=user.id)
+                    )
+                    db.execute(delete(LoginSession).where(LoginSession.user_id == guest_id))
             db.add(
                 LoginSession(
                     token_hash=digest(token),

@@ -142,6 +142,7 @@ export function Preferences({
 export function App() {
   const [user, setUser] = useState<api.User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [guestPending, setGuestPending] = useState(false);
   const [showAuth, setShowAuth] = useState(
     new URLSearchParams(window.location.search).has("signin"),
   );
@@ -232,13 +233,17 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [highlightedProject]);
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     void refresh();
     const timer = window.setInterval(refresh, 3000);
     return () => window.clearInterval(timer);
   }, [user, refresh]);
   async function upload(file?: File) {
     if (!file || progress !== null) return;
+    if (!user?.id) {
+      setError("Your workspace is reconnecting. Please try again shortly.");
+      return;
+    }
     const invalid = validateVideo(file);
     if (invalid) {
       setError(invalid);
@@ -456,6 +461,7 @@ export function App() {
             </span>
             <button
               aria-label={user?.is_guest ? "Sign in" : "Sign out"}
+              disabled={guestPending}
               className="icon-button"
               onClick={async () => {
                 if (user?.is_guest) {
@@ -470,15 +476,25 @@ export function App() {
                   setDeletingId("");
                   setHighlightedProject("");
                   api.setCsrf("");
-                  const guest = await api.guestWorkspace();
-                  api.setCsrf(guest.csrf);
-                  setUser(guest);
+                  setUser({
+                    id: "",
+                    name: "Guest workspace",
+                    email: "",
+                    csrf: "",
+                    is_guest: true,
+                  });
                   setProjects([]);
                   removedIds.current.clear();
                   setLibraryLoaded(false);
                   navigate("/");
+                  setGuestPending(true);
+                  const guest = await api.guestWorkspace();
+                  api.setCsrf(guest.csrf);
+                  setUser(guest);
                 } catch (e) {
                   setError(message(e));
+                } finally {
+                  setGuestPending(false);
                 }
               }}
             >

@@ -113,12 +113,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if size == 0:
                 raise HTTPException(400, "Video is empty.")
             with sessions() as session:
+                owner_id = user.id
+                if user.is_guest:
+                    # Lock the same guest row as sign_in(). If sign-in won, the final
+                    # upload belongs to its account; if upload won, the claim transfers it.
+                    claimed_by = session.scalar(
+                        update(User)
+                        .where(User.id == user.id)
+                        .values(claimed_by=User.claimed_by)
+                        .returning(User.claimed_by)
+                    )
+                    owner_id = claimed_by or user.id
                 project = Project(
                     id=project_id,
                     filename=filename,
                     size_bytes=size,
                     status="queued",
-                    owner_id=user.id,
+                    owner_id=owner_id,
                 )
                 session.add(project)
                 session.commit()
