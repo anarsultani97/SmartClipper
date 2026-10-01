@@ -113,12 +113,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if size == 0:
                 raise HTTPException(400, "Video is empty.")
             with sessions() as session:
+                owner_id = user.id
+                if user.is_guest:
+                    # Lock the same guest row as sign_in(). If sign-in won, the final
+                    # upload belongs to its account; if upload won, the claim transfers it.
+                    claimed_by = session.scalar(
+                        update(User)
+                        .where(User.id == user.id)
+                        .values(claimed_by=User.claimed_by)
+                        .returning(User.claimed_by)
+                    )
+                    owner_id = claimed_by or user.id
                 project = Project(
                     id=project_id,
                     filename=filename,
                     size_bytes=size,
                     status="queued",
-                    owner_id=user.id,
+                    owner_id=owner_id,
                 )
                 session.add(project)
                 session.commit()
@@ -186,6 +197,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/projects/{project_id}/media/{kind}")
     def media(project_id: str, kind: str, user: CurrentUser):
+        if kind == "audio" and user.is_guest:
+            raise HTTPException(401, "Sign in to download your audio.")
         names = {
             "preview": ("preview.mp4", "video/mp4"),
             "thumbnail": ("thumbnail.jpg", "image/jpeg"),

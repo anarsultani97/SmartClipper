@@ -87,3 +87,13 @@ Operator access uses an allowlist of **existing authenticated user IDs**, never 
 ## Import queue feedback
 
 Uploads show transferred bytes as a percentage and progress bar, with a 3 GB maximum and a 30-minute duration limit. A completion notice points to Recent videos; the arriving row briefly highlights, respecting reduced motion. Queued and preparing videos have an ? control. Removal records a tombstone, hides the project immediately and stops active native preparation before deleting its files; conditional worker updates prevent it from reappearing. An empty queue is labeled explicitly, including on mobile. Completed videos stay in the library.
+
+## Guest-first workspace and deferred accounts
+
+The initial screen opens the main editor. A private opaque cookie establishes a guest owner, so imports, media previews, generation and edits still enforce ownership and CSRF. Guest sessions last 24 hours; the profile invites sign-in to preserve work. Guests can review shorts but export creation and MP4/MP3 downloads require an account. Cover downloads prompt sign-in in the browser editor. Preview assets remain viewable; this is an access flow, not DRM. Social connections will use the same account gate when implemented.
+
+Successful email signup/login or verified Google consent transfers only the current unexpired guest session's projects, then revokes guest sessions. Email claims require the guest CSRF token; OAuth claims must match the guest token captured in signed state. Existing account-owned or ownerless projects are never auto-claimed. Google returns to a validated internal project path and the allowed originating host, avoiding localhost/127.0.0.1 cookie mismatches. Failed consent returns to an editable sign-in page. Signup passwords require eight characters; login accepts existing passwords without applying signup rules. Validation errors identify the invalid field without showing submitted secrets.
+
+Guest data retention, account recovery/verification and hosted abuse quotas remain future deployment work.
+
+Guest claims persist a guest-to-account mapping. Claiming and final upload assignment both lock/update the same guest database row in a short transaction: uploads committed first are transferred, and uploads completed after the claim resolve the account owner. This keeps long uploads accessible when another tab signs in. Logout clears account state before starting a new guest session, so guest initialization failure cannot leave the old library visible. Cover download saves metadata before the account page opens.

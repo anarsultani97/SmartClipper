@@ -4,7 +4,7 @@ Date: 2026-10-01. The owner selected direction 01. Alternate library/studio desi
 
 ## Pages
 
-- **Sign in / signup:** email account creation and configured Google/Facebook providers. Editorial quotes are attributed to the product philosophy, not invented users.
+- **Sign in / signup:** email account creation and Google sign-in when configured, requested at download rather than first entry. Facebook is hidden for now. Editorial quotes are attributed to the product philosophy, not invented users.
 - **My videos:** one import action, a language/platform/length panel, accurate benefits and the real project library.
 - **Source workspace:** a larger video preview and timeline, MP3 extraction, timed transcript upload and generation preferences. The old context-coming promotion panel is removed.
 - **Your shorts:** a dedicated page with clip selection, a large vertical player, three context sentences and the actual excerpt transcript. Subtitles, language, music, title and cover changes stay in one focused customization panel.

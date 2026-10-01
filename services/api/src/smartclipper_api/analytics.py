@@ -78,7 +78,9 @@ def install_analytics(app, settings, sessions):
                     "exports": exports,
                     "customized_shorts": edits,
                     "failed_jobs": failures,
-                    "registered_users": count(select(func.count(User.id)))
+                    "registered_users": count(
+                        select(func.count(User.id)).where(User.is_guest.is_(False))
+                    )
                     if scope == "team"
                     else None,
                 },

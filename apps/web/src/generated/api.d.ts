@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+  "/api/v1/auth/guest": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Guest */
+    post: operations["guest_api_v1_auth_guest_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/auth/me": {
     parameters: {
       query?: never;
@@ -633,6 +650,21 @@ export interface components {
       /** Transcript */
       transcript: components["schemas"]["Caption"][];
     };
+    /** SignupCredentials */
+    SignupCredentials: {
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+      /** Password */
+      password: string;
+      /**
+       * Name
+       * @default Creator
+       */
+      name: string;
+    };
     /** ThumbnailView */
     ThumbnailView: {
       /** Index */
@@ -673,6 +705,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  guest_api_v1_auth_guest_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+    };
+  };
   me_api_v1_auth_me_get: {
     parameters: {
       query?: never;
@@ -702,7 +754,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["Credentials"];
+        "application/json": components["schemas"]["SignupCredentials"];
       };
     };
     responses: {
@@ -801,7 +853,9 @@ export interface operations {
   };
   start_api_v1_auth__provider__start_get: {
     parameters: {
-      query?: never;
+      query?: {
+        return_to?: string;
+      };
       header?: never;
       path: {
         provider: string;

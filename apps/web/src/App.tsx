@@ -25,6 +25,7 @@ import { formatTime, validateVideo } from "./media";
 import { AuthView } from "./AuthView";
 import { ClipWorkspace, ThumbnailEditor } from "./ClipWorkspace";
 import { ActivityDashboard } from "./ActivityDashboard";
+import { AuthGate, useAuthGate } from "./AuthGate";
 
 export const languages = [
   ["en", "English"],
@@ -141,6 +142,10 @@ export function Preferences({
 export function App() {
   const [user, setUser] = useState<api.User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [guestPending, setGuestPending] = useState(false);
+  const [showAuth, setShowAuth] = useState(
+    new URLSearchParams(window.location.search).has("signin"),
+  );
   const [projects, setProjects] = useState<api.Project[]>([]);
   const [path, setPath] = useState(
     window.location.pathname + window.location.search,
@@ -160,6 +165,7 @@ export function App() {
   const highlightRef = useRef<HTMLDivElement>(null);
   const abort = useRef<AbortController | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const authBootstrap = useRef<Promise<api.User> | null>(null);
   useEffect(() => {
     const listener = () => {
       setPath(window.location.pathname + window.location.search);
@@ -170,15 +176,34 @@ export function App() {
     return () => window.removeEventListener("popstate", listener);
   }, []);
   useEffect(() => {
-    api
+    let active = true;
+    authBootstrap.current ??= api
       .currentUser()
+      .catch(() => api.guestWorkspace());
+    authBootstrap.current
       .then((u) => {
+        if (!active) return;
         api.setCsrf(u.csrf);
         setUser(u);
       })
-      .catch(() => {})
-      .finally(() => setAuthReady(true));
-    return () => abort.current?.abort();
+      .catch((e) => {
+        if (!active) return;
+        setError(message(e));
+        setUser({
+          id: "",
+          name: "Guest workspace",
+          email: "",
+          csrf: "",
+          is_guest: true,
+        });
+      })
+      .finally(() => {
+        if (active) setAuthReady(true);
+      });
+    return () => {
+      active = false;
+      abort.current?.abort();
+    };
   }, []);
   const reportError = useCallback((e: unknown) => setError(message(e)), []);
   const refresh = useCallback(async () => {
@@ -208,13 +233,17 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [highlightedProject]);
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     void refresh();
     const timer = window.setInterval(refresh, 3000);
     return () => window.clearInterval(timer);
   }, [user, refresh]);
   async function upload(file?: File) {
     if (!file || progress !== null) return;
+    if (!user?.id) {
+      setError("Your workspace is reconnecting. Please try again shortly.");
+      return;
+    }
     const invalid = validateVideo(file);
     if (invalid) {
       setError(invalid);
@@ -282,6 +311,15 @@ export function App() {
   const thumbId = new URLSearchParams(path.split("?")[1] || "").get(
     "thumbnail",
   );
+  function closeAuth() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("signin");
+    url.searchParams.delete("auth_error");
+    const next = url.pathname + url.search;
+    window.history.replaceState(null, "", next);
+    setPath(next);
+    setShowAuth(false);
+  }
   if (!authReady)
     return (
       <div className="loading-screen">
@@ -289,417 +327,457 @@ export function App() {
         <p>Opening your workspace…</p>
       </div>
     );
-  if (!user)
+  if (showAuth)
     return (
       <AuthView
+        onBack={closeAuth}
         onLogin={(u) => {
           ++accountEpoch.current;
+          abort.current?.abort();
+          setProgress(null);
           api.setCsrf(u.csrf);
           setUser(u);
+          closeAuth();
         }}
       />
     );
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="/"
-          onClick={(e) => {
-            e.preventDefault();
-            navigate("/");
-          }}
-        >
-          <span className="brand-mark">
-            <Scissors size={21} />
-          </span>
-          SmartClipper<span className="beta">BETA</span>
-        </a>
-        <button
-          className="new-project"
-          onClick={() => {
-            navigate("/");
-            input.current?.click();
-          }}
-        >
-          <Plus size={18} /> New video
-        </button>
-        <p className="nav-label">YOUR WORKSPACE</p>
-        <button
-          className={
-            !selected && path !== "/activity" ? "nav-item active" : "nav-item"
-          }
-          onClick={() => navigate("/")}
-        >
-          <Film size={18} /> My videos
-        </button>
-        <button
-          className={path === "/activity" ? "nav-item active" : "nav-item"}
-          onClick={() => navigate("/activity")}
-        >
-          <ChartNoAxesCombined size={18} /> Activity dashboard
-        </button>
-        <p className="nav-label recent-heading">
-          RECENT VIDEOS <span>{projects.length}</span>
-        </p>
-        <p className="queue-status" role="status">
-          {!libraryLoaded
-            ? "Loading your videos…"
-            : queued.length
-              ? `${queued.length} ${queued.length === 1 ? "video" : "videos"} in the queue. Track preparation here.`
-              : "No videos in the queue. You’re all caught up."}
-        </p>
-        <div className="recent-list">
-          {recentProjects.map((p) => (
-            <div
-              className={`recent-row ${selected?.id === p.id ? "selected" : ""} ${highlightedProject === p.id ? "queue-arrival" : ""}`}
-              key={p.id}
-              ref={highlightedProject === p.id ? highlightRef : undefined}
-            >
-              <button
-                className="recent-item"
-                onClick={() => navigate(`/projects/${p.id}`)}
-              >
-                <span className="recent-icon">
-                  <Clapperboard size={16} />
-                </span>
-                <span>
-                  {p.filename}
-                  <small>
-                    {p.status === "ready"
-                      ? formatTime(p.duration_seconds || 0)
-                      : p.status === "processing"
-                        ? "Preparing your video…"
-                        : p.status === "queued"
-                          ? "Queued for preparation"
-                          : p.status}
-                  </small>
-                </span>
-              </button>
-              {inQueue(p) && (
-                <button
-                  className="queue-remove"
-                  aria-label={`Remove ${p.filename} from queue`}
-                  title="Remove from queue"
-                  disabled={!!deletingId}
-                  onClick={() => void removeVideo(p)}
-                >
-                  {deletingId === p.id ? (
-                    <LoaderCircle size={14} className="spin" />
-                  ) : (
-                    <X size={14} />
-                  )}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="sidebar-note">
-          <Sparkles size={19} />
-          <p>“Every long story has a short worth sharing.”</p>
-          <small>A little editing philosophy.</small>
-        </div>
-        <div className="profile">
-          <span className="avatar">{user.name[0]?.toUpperCase()}</span>
-          <span>
-            {user.name}
-            <small>Your private workspace</small>
-          </span>
-          <button
-            aria-label="Sign out"
-            className="icon-button"
-            onClick={async () => {
-              try {
-                await api.logout();
-                ++accountEpoch.current;
-                abort.current?.abort();
-                setProgress(null);
-                setDeletingId("");
-                setHighlightedProject("");
-                api.setCsrf("");
-                setUser(null);
-                setProjects([]);
-                removedIds.current.clear();
-                setLibraryLoaded(false);
-                navigate("/");
-              } catch (e) {
-                setError(message(e));
-              }
+    <AuthGate.Provider
+      value={{
+        isGuest: !user || !!user.is_guest,
+        requestSignIn: () => setShowAuth(true),
+      }}
+    >
+      <div className="app-shell">
+        <aside className="sidebar">
+          <a
+            className="brand"
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate("/");
             }}
           >
-            <LogOut size={17} />
-          </button>
-        </div>
-      </aside>
-      <main className="main">
-        <header className="topbar">
-          <div>
-            <span className="breadcrumb">Workspace</span>
-            <ChevronRight size={14} />
-            <span>
-              {selected
-                ? results
-                  ? "Your shorts"
-                  : "Video workspace"
-                : path === "/activity"
-                  ? "Activity dashboard"
-                  : "My videos"}
+            <span className="brand-mark">
+              <Scissors size={21} />
             </span>
-          </div>
-          <span className="quiet-badge">
-            <ShieldCheck size={15} /> Yours to review. Yours to share.
-          </span>
-        </header>
-        <input
-          ref={input}
-          type="file"
-          accept="video/mp4,.mp4"
-          className="sr-only"
-          aria-label="Import video file"
-          onChange={(e) => void upload(e.target.files?.[0])}
-        />
-        <div className="content">
-          {progress !== null && (
-            <section className="upload-progress" aria-live="polite">
-              <Upload size={21} />
-              <div>
-                <div className="upload-progress-label">
-                  <strong>
-                    {progress === 100
-                      ? "Upload transferred. Saving your video…"
-                      : `Uploading ${uploadingName}`}
-                  </strong>
-                  <span>{progress}%</span>
-                </div>
-                <progress
-                  aria-label="Video upload progress"
-                  value={progress}
-                  max={100}
-                />
-                <small>
-                  Keep this tab open while uploading. Video preparation starts
-                  after the transfer.
-                </small>
-              </div>
-              <button
-                className="text-button"
-                onClick={() => abort.current?.abort()}
+            SmartClipper<span className="beta">BETA</span>
+          </a>
+          <button
+            className="new-project"
+            onClick={() => {
+              navigate("/");
+              input.current?.click();
+            }}
+          >
+            <Plus size={18} /> New video
+          </button>
+          <p className="nav-label">YOUR WORKSPACE</p>
+          <button
+            className={
+              !selected && path !== "/activity" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => navigate("/")}
+          >
+            <Film size={18} /> My videos
+          </button>
+          <button
+            className={path === "/activity" ? "nav-item active" : "nav-item"}
+            onClick={() => navigate("/activity")}
+          >
+            <ChartNoAxesCombined size={18} /> Activity dashboard
+          </button>
+          <p className="nav-label recent-heading">
+            RECENT VIDEOS <span>{projects.length}</span>
+          </p>
+          <p className="queue-status" role="status">
+            {!libraryLoaded
+              ? "Loading your videos…"
+              : queued.length
+                ? `${queued.length} ${queued.length === 1 ? "video" : "videos"} in the queue. Track preparation here.`
+                : "No videos in the queue. You’re all caught up."}
+          </p>
+          <div className="recent-list">
+            {recentProjects.map((p) => (
+              <div
+                className={`recent-row ${selected?.id === p.id ? "selected" : ""} ${highlightedProject === p.id ? "queue-arrival" : ""}`}
+                key={p.id}
+                ref={highlightedProject === p.id ? highlightRef : undefined}
               >
-                Cancel upload
-              </button>
-            </section>
-          )}
-          {error && (
-            <div role="alert" className="alert">
-              {error}
-              <button onClick={() => setError("")} aria-label="Dismiss error">
-                ×
-              </button>
+                <button
+                  className="recent-item"
+                  onClick={() => navigate(`/projects/${p.id}`)}
+                >
+                  <span className="recent-icon">
+                    <Clapperboard size={16} />
+                  </span>
+                  <span>
+                    {p.filename}
+                    <small>
+                      {p.status === "ready"
+                        ? formatTime(p.duration_seconds || 0)
+                        : p.status === "processing"
+                          ? "Preparing your video…"
+                          : p.status === "queued"
+                            ? "Queued for preparation"
+                            : p.status}
+                    </small>
+                  </span>
+                </button>
+                {inQueue(p) && (
+                  <button
+                    className="queue-remove"
+                    aria-label={`Remove ${p.filename} from queue`}
+                    title="Remove from queue"
+                    disabled={!!deletingId}
+                    onClick={() => void removeVideo(p)}
+                  >
+                    {deletingId === p.id ? (
+                      <LoaderCircle size={14} className="spin" />
+                    ) : (
+                      <X size={14} />
+                    )}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="sidebar-note">
+            <Sparkles size={19} />
+            <p>“Every long story has a short worth sharing.”</p>
+            <small>A little editing philosophy.</small>
+          </div>
+          <div className="profile">
+            <span className="avatar">
+              {user?.name[0]?.toUpperCase() || "G"}
+            </span>
+            <span>
+              {user?.name || "Guest workspace"}
+              <small>
+                {user?.is_guest
+                  ? "Sign in when you're ready to download"
+                  : "Your private workspace"}
+              </small>
+            </span>
+            <button
+              aria-label={user?.is_guest ? "Sign in" : "Sign out"}
+              disabled={guestPending}
+              className="icon-button"
+              onClick={async () => {
+                if (user?.is_guest) {
+                  setShowAuth(true);
+                  return;
+                }
+                try {
+                  await api.logout();
+                  ++accountEpoch.current;
+                  abort.current?.abort();
+                  setProgress(null);
+                  setDeletingId("");
+                  setHighlightedProject("");
+                  api.setCsrf("");
+                  setUser({
+                    id: "",
+                    name: "Guest workspace",
+                    email: "",
+                    csrf: "",
+                    is_guest: true,
+                  });
+                  setProjects([]);
+                  removedIds.current.clear();
+                  setLibraryLoaded(false);
+                  navigate("/");
+                  setGuestPending(true);
+                  const guest = await api.guestWorkspace();
+                  api.setCsrf(guest.csrf);
+                  setUser(guest);
+                } catch (e) {
+                  setError(message(e));
+                } finally {
+                  setGuestPending(false);
+                }
+              }}
+            >
+              <LogOut size={17} />
+            </button>
+          </div>
+        </aside>
+        <main className="main">
+          <header className="topbar">
+            <div>
+              <span className="breadcrumb">Workspace</span>
+              <ChevronRight size={14} />
+              <span>
+                {selected
+                  ? results
+                    ? "Your shorts"
+                    : "Video workspace"
+                  : path === "/activity"
+                    ? "Activity dashboard"
+                    : "My videos"}
+              </span>
             </div>
-          )}
-          {notice && (
-            <div role="status" className="notice">
-              {notice}
-            </div>
-          )}
-          {path === "/activity" ? (
-            <ActivityDashboard />
-          ) : selected ? (
-            results ? (
-              thumbId ? (
-                <ThumbnailEditor
-                  key={`${selected.id}:${thumbId}`}
-                  project={selected}
-                  shortId={thumbId}
-                  onError={reportError}
-                />
+            <span className="quiet-badge">
+              <ShieldCheck size={15} /> Yours to review. Yours to share.
+            </span>
+          </header>
+          <input
+            ref={input}
+            type="file"
+            accept="video/mp4,.mp4"
+            className="sr-only"
+            aria-label="Import video file"
+            onChange={(e) => void upload(e.target.files?.[0])}
+          />
+          <div className="content">
+            {progress !== null && (
+              <section className="upload-progress" aria-live="polite">
+                <Upload size={21} />
+                <div>
+                  <div className="upload-progress-label">
+                    <strong>
+                      {progress === 100
+                        ? "Upload transferred. Saving your video…"
+                        : `Uploading ${uploadingName}`}
+                    </strong>
+                    <span>{progress}%</span>
+                  </div>
+                  <progress
+                    aria-label="Video upload progress"
+                    value={progress}
+                    max={100}
+                  />
+                  <small>
+                    Keep this tab open while uploading. Video preparation starts
+                    after the transfer.
+                  </small>
+                </div>
+                <button
+                  className="text-button"
+                  onClick={() => abort.current?.abort()}
+                >
+                  Cancel upload
+                </button>
+              </section>
+            )}
+            {error && (
+              <div role="alert" className="alert">
+                {error}
+                <button onClick={() => setError("")} aria-label="Dismiss error">
+                  ×
+                </button>
+              </div>
+            )}
+            {notice && (
+              <div role="status" className="notice">
+                {notice}
+              </div>
+            )}
+            {path === "/activity" ? (
+              <ActivityDashboard />
+            ) : selected ? (
+              results ? (
+                thumbId ? (
+                  <ThumbnailEditor
+                    key={`${selected.id}:${thumbId}`}
+                    project={selected}
+                    shortId={thumbId}
+                    onError={reportError}
+                  />
+                ) : (
+                  <Results
+                    key={selected.id}
+                    project={selected}
+                    onError={reportError}
+                  />
+                )
               ) : (
-                <Results
+                <SourceWorkspace
                   key={selected.id}
                   project={selected}
+                  options={options}
+                  setOptions={setOptions}
+                  refresh={refresh}
                   onError={reportError}
+                  onNotice={setNotice}
                 />
               )
+            ) : selectedId ? (
+              <section className="empty-state">
+                <h2>Video unavailable.</h2>
+                <p>
+                  If you just opened this page, your library may still be
+                  loading.
+                </p>
+                <button onClick={() => navigate("/")}>Back to my videos</button>
+              </section>
             ) : (
-              <SourceWorkspace
-                key={selected.id}
-                project={selected}
-                options={options}
-                setOptions={setOptions}
-                refresh={refresh}
-                onError={reportError}
-                onNotice={setNotice}
-              />
-            )
-          ) : selectedId ? (
-            <section className="empty-state">
-              <h2>Video unavailable.</h2>
-              <p>
-                If you just opened this page, your library may still be loading.
-              </p>
-              <button onClick={() => navigate("/")}>Back to my videos</button>
-            </section>
-          ) : (
-            <>
-              <div className="page-heading">
-                <div>
-                  <span className="eyebrow">
-                    <Sparkles size={14} /> A LITTLE LESS EDITING. A LOT MORE
-                    CREATING.
-                  </span>
-                  <h1>
-                    Long story.
-                    <br />
-                    <em>Short format.</em>
-                  </h1>
-                  <p>
-                    Find the moments worth sharing.
-                    <br />
-                    Turn your video into a handful of thoughtful shorts.
-                  </p>
-                </div>
-                <span className="heading-sticker">
-                  <Scissors />
-                  <span>
-                    Keep the story.
-                    <br />
-                    Skip the scrolling.
-                  </span>
-                </span>
-              </div>
-              <section className="import-grid">
-                <div
-                  className="upload-card"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    void upload(e.dataTransfer.files[0]);
-                  }}
-                >
-                  <div className="upload-symbol">
-                    <Upload size={30} />
-                    <span>
-                      <Sparkles size={14} />
+              <>
+                <div className="page-heading">
+                  <div>
+                    <span className="eyebrow">
+                      <Sparkles size={14} /> A LITTLE LESS EDITING. A LOT MORE
+                      CREATING.
                     </span>
+                    <h1>
+                      Long story.
+                      <br />
+                      <em>Short format.</em>
+                    </h1>
+                    <p>
+                      Find the moments worth sharing.
+                      <br />
+                      Turn your video into a handful of thoughtful shorts.
+                    </p>
                   </div>
-                  <h2>Your next short starts here.</h2>
-                  <p>Drop your video, or choose one to get started.</p>
-                  <button
-                    className="primary"
-                    disabled={progress !== null}
-                    onClick={() => input.current?.click()}
+                  <span className="heading-sticker">
+                    <Scissors />
+                    <span>
+                      Keep the story.
+                      <br />
+                      Skip the scrolling.
+                    </span>
+                  </span>
+                </div>
+                <section className="import-grid">
+                  <div
+                    className="upload-card"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      void upload(e.dataTransfer.files[0]);
+                    }}
                   >
-                    {progress !== null ? (
-                      <LoaderCircle className="spin" size={18} />
-                    ) : (
-                      <Plus size={18} />
-                    )}{" "}
-                    {progress !== null
-                      ? `Uploading ${progress}%`
-                      : "Choose video"}
-                  </button>
-                  <small>MP4 · up to 3 GB · up to 30 minutes</small>
-                  <div className="upload-foot">
-                    <Check size={14} /> Original audio stays with your story
+                    <div className="upload-symbol">
+                      <Upload size={30} />
+                      <span>
+                        <Sparkles size={14} />
+                      </span>
+                    </div>
+                    <h2>Your next short starts here.</h2>
+                    <p>Drop your video, or choose one to get started.</p>
+                    <button
+                      className="primary"
+                      disabled={progress !== null}
+                      onClick={() => input.current?.click()}
+                    >
+                      {progress !== null ? (
+                        <LoaderCircle className="spin" size={18} />
+                      ) : (
+                        <Plus size={18} />
+                      )}{" "}
+                      {progress !== null
+                        ? `Uploading ${progress}%`
+                        : "Choose video"}
+                    </button>
+                    <small>MP4 · up to 3 GB · up to 30 minutes</small>
+                    <div className="upload-foot">
+                      <Check size={14} /> Original audio stays with your story
+                    </div>
                   </div>
-                </div>
-                <section className="card import-options">
-                  <span className="step-label">01 / MAKE IT YOURS</span>
-                  <h2>
-                    A few preferences.
-                    <br />
-                    We’ll take it from here.
-                  </h2>
-                  <Preferences value={options} onChange={setOptions} />
+                  <section className="card import-options">
+                    <span className="step-label">01 / MAKE IT YOURS</span>
+                    <h2>
+                      A few preferences.
+                      <br />
+                      We’ll take it from here.
+                    </h2>
+                    <Preferences value={options} onChange={setOptions} />
+                  </section>
                 </section>
-              </section>
-              <section className="benefit-row">
-                <div>
-                  <Captions />
-                  <h3>Speak your language</h3>
-                  <p>
-                    Eleven languages, including Turkish, with optional English
-                    captions.
-                  </p>
-                </div>
-                <div>
-                  <ImagePlus />
-                  <h3>A clearer first impression</h3>
-                  <p>Quality-checked cover choices, plus your own thumbnail.</p>
-                </div>
-                <div>
-                  <WandSparkles />
-                  <h3>Your final say</h3>
-                  <p>
-                    Preview the context, customize, and download your favorites.
-                  </p>
-                </div>
-              </section>
-              <section className="library">
-                <div className="section-heading">
-                  <h2>
-                    Your videos <span>{projects.length}</span>
-                  </h2>
-                  <input
-                    type="search"
-                    placeholder="Find a video…"
-                    aria-label="Search videos"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                {projects.length ? (
-                  <div className="project-grid">
-                    {projects
-                      .filter((p) =>
-                        p.filename.toLowerCase().includes(search.toLowerCase()),
-                      )
-                      .map((p) => (
-                        <button
-                          className="project-card"
-                          key={p.id}
-                          onClick={() => navigate(`/projects/${p.id}`)}
-                        >
-                          <div className="project-cover">
-                            {p.status === "ready" ? (
-                              <img
-                                src={api.mediaUrl(p.id, "thumbnail")}
-                                alt=""
-                              />
-                            ) : (
-                              <Film size={30} />
-                            )}
-                            <span className={`status ${p.status}`}>
-                              {p.status}
-                            </span>
-                          </div>
-                          <div>
-                            <h3>{p.filename}</h3>
-                            <span>
-                              {formatTime(p.duration_seconds || 0)}{" "}
-                              <ArrowRight size={16} />
-                            </span>
-                          </div>
-                        </button>
-                      ))}
+                <section className="benefit-row">
+                  <div>
+                    <Captions />
+                    <h3>Speak your language</h3>
+                    <p>
+                      Eleven languages, including Turkish, with optional English
+                      captions.
+                    </p>
                   </div>
-                ) : (
-                  <div className="empty-library">
-                    <Film size={26} />
-                    <h3>A fresh start.</h3>
-                    <p>Your imported videos will be saved here.</p>
+                  <div>
+                    <ImagePlus />
+                    <h3>A clearer first impression</h3>
+                    <p>
+                      Quality-checked cover choices, plus your own thumbnail.
+                    </p>
                   </div>
-                )}
-              </section>
-            </>
-          )}
-        </div>
-        <footer className="footer">
-          Made for the moments that matter.{" "}
-          <span>Preview every suggestion before sharing.</span>
-        </footer>
-      </main>
-    </div>
+                  <div>
+                    <WandSparkles />
+                    <h3>Your final say</h3>
+                    <p>
+                      Preview the context, customize, and download your
+                      favorites.
+                    </p>
+                  </div>
+                </section>
+                <section className="library">
+                  <div className="section-heading">
+                    <h2>
+                      Your videos <span>{projects.length}</span>
+                    </h2>
+                    <input
+                      type="search"
+                      placeholder="Find a video…"
+                      aria-label="Search videos"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </div>
+                  {projects.length ? (
+                    <div className="project-grid">
+                      {projects
+                        .filter((p) =>
+                          p.filename
+                            .toLowerCase()
+                            .includes(search.toLowerCase()),
+                        )
+                        .map((p) => (
+                          <button
+                            className="project-card"
+                            key={p.id}
+                            onClick={() => navigate(`/projects/${p.id}`)}
+                          >
+                            <div className="project-cover">
+                              {p.status === "ready" ? (
+                                <img
+                                  src={api.mediaUrl(p.id, "thumbnail")}
+                                  alt=""
+                                />
+                              ) : (
+                                <Film size={30} />
+                              )}
+                              <span className={`status ${p.status}`}>
+                                {p.status}
+                              </span>
+                            </div>
+                            <div>
+                              <h3>{p.filename}</h3>
+                              <span>
+                                {formatTime(p.duration_seconds || 0)}{" "}
+                                <ArrowRight size={16} />
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="empty-library">
+                      <Film size={26} />
+                      <h3>A fresh start.</h3>
+                      <p>Your imported videos will be saved here.</p>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+          </div>
+          <footer className="footer">
+            Made for the moments that matter.{" "}
+            <span>Preview every suggestion before sharing.</span>
+          </footer>
+        </main>
+      </div>
+    </AuthGate.Provider>
   );
 }
 
@@ -718,6 +796,7 @@ function SourceWorkspace({
   onError: (e: unknown) => void;
   onNotice: (m: string) => void;
 }) {
+  const { isGuest, requestSignIn } = useAuthGate();
   const [busy, setBusy] = useState(false);
   const [transcriptLanguage, setTranscriptLanguage] = useState("en");
   const video = useRef<HTMLVideoElement>(null);
@@ -786,7 +865,15 @@ function SourceWorkspace({
                   <Film size={16} /> Original video
                 </span>
                 {project.has_audio && (
-                  <a href={api.mediaUrl(project.id, "audio")}>
+                  <a
+                    href={api.mediaUrl(project.id, "audio")}
+                    onClick={(event) => {
+                      if (isGuest) {
+                        event.preventDefault();
+                        requestSignIn();
+                      }
+                    }}
+                  >
                     <Download size={15} /> Extract MP3
                   </a>
                 )}

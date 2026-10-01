@@ -2,7 +2,8 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { App, Preferences, defaultOptions, navigate } from "./App";
-import { ClipWorkspace } from "./ClipWorkspace";
+import { ClipWorkspace, ThumbnailEditor } from "./ClipWorkspace";
+import { AuthGate } from "./AuthGate";
 import * as api from "./api";
 vi.mock("./api");
 const user = {
@@ -56,6 +57,11 @@ beforeEach(() => {
   vi.resetAllMocks();
   window.history.replaceState(null, "", "/");
   vi.mocked(api.currentUser).mockResolvedValue(user);
+  vi.mocked(api.guestWorkspace).mockResolvedValue({
+    ...user,
+    id: "guest",
+    is_guest: true,
+  });
   vi.mocked(api.listProjects).mockResolvedValue([]);
   vi.mocked(api.providers).mockResolvedValue({
     google: false,
@@ -86,6 +92,7 @@ it("does not restore a previous account's projects from a delayed poll", async (
   await act(async () => {
     finish([{ ...project, filename: "private-first-account.mp4" }]);
   });
+  await userEvent.click(await screen.findByRole("button", { name: "Sign in" }));
   await userEvent.type(
     screen.getByLabelText("Email address"),
     "second@example.com",
@@ -96,6 +103,27 @@ it("does not restore a previous account's projects from a delayed poll", async (
   expect(
     screen.queryByText("private-first-account.mp4"),
   ).not.toBeInTheDocument();
+});
+it("clears the old account library even when guest setup fails after logout", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([project]);
+  vi.mocked(api.logout).mockResolvedValue({});
+  vi.mocked(api.guestWorkspace).mockRejectedValue(
+    new Error("Service temporarily unavailable"),
+  );
+  render(<App />);
+  await screen.findByRole("button", { name: "Sign out" });
+  await waitFor(() =>
+    expect(screen.getAllByText("podcast.mp4").length).toBeGreaterThan(0),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  await screen.findByText("Service temporarily unavailable");
+  expect(screen.queryByText("podcast.mp4")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Sign out" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Choose video" }),
+  ).toBeInTheDocument();
 });
 it("keeps a newly uploaded video when an older empty poll finishes", async () => {
   let finish!: (value: api.Project[]) => void;
@@ -318,6 +346,7 @@ it("uses email signup while unavailable OAuth providers are disabled", async () 
   vi.mocked(api.currentUser).mockRejectedValue(new Error("401"));
   vi.mocked(api.authenticate).mockResolvedValue(user);
   render(<App />);
+  await userEvent.click(await screen.findByRole("button", { name: "Sign in" }));
   await userEvent.click(
     await screen.findByRole("button", { name: "Create an account" }),
   );
@@ -339,6 +368,25 @@ it("uses email signup while unavailable OAuth providers are disabled", async () 
     "test-password-123",
     "Creator",
   );
+});
+it("opens the main workspace for visitors and asks for sign-in only at download", async () => {
+  window.history.replaceState(null, "", "/projects/ready/shorts");
+  vi.mocked(api.currentUser).mockRejectedValue(new Error("Please sign in"));
+  vi.mocked(api.listProjects).mockResolvedValue([project]);
+  vi.mocked(api.shorts).mockResolvedValue([short]);
+  vi.mocked(api.saveShort).mockResolvedValue(short);
+  render(<App />);
+  await screen.findByLabelText("Short title");
+  expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Sign in to download" }),
+  );
+  expect(await screen.findByLabelText("Email address")).toBeInTheDocument();
+  expect(api.exportShort).not.toHaveBeenCalled();
+  await userEvent.click(
+    screen.getByRole("button", { name: /Back to editing/ }),
+  );
+  expect(await screen.findByLabelText("Short title")).toBeInTheDocument();
 });
 it("allows subtitles off and saves the exact displayed revision", async () => {
   const saved = vi.fn();
@@ -422,4 +470,66 @@ it("only offers downloads for ready exports of the current saved revision", () =
     />,
   );
   expect(screen.queryByText(/Your MP4 is ready/)).not.toBeInTheDocument();
+});
+it("shows a ready download when polling only updates export metadata", () => {
+  const props = {
+    jobs: [] as api.Job[],
+    onSaved: vi.fn(),
+    refresh: vi.fn(),
+    onError: vi.fn(),
+  };
+  const view = render(<ClipWorkspace short={short} {...props} />);
+  const job: api.Job = {
+    id: "current",
+    project_id: "ready",
+    kind: "export",
+    status: "ready",
+    stage: "Ready",
+    error: null,
+    options: { short_id: short.id, revision: short.revision },
+  };
+  view.rerender(
+    <ClipWorkspace
+      short={{ ...short, export_revision: short.revision }}
+      {...props}
+      jobs={[job]}
+    />,
+  );
+  expect(screen.getByText(/Your MP4 is ready/)).toBeInTheDocument();
+});
+it("persists a guest's cover edits before opening sign-in for JPG download", async () => {
+  const requestSignIn = vi.fn();
+  let finish!: (value: api.Short) => void;
+  vi.mocked(api.shorts).mockResolvedValue([short]);
+  vi.mocked(api.saveShort).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  render(
+    <AuthGate.Provider value={{ isGuest: true, requestSignIn }}>
+      <ThumbnailEditor project={project} shortId={short.id} onError={vi.fn()} />
+    </AuthGate.Provider>,
+  );
+  const text = await screen.findByLabelText("Cover text");
+  await userEvent.clear(text);
+  await userEvent.type(text, "A cover worth keeping");
+  await userEvent.selectOptions(screen.getByLabelText("Text style"), "clean");
+  await userEvent.click(screen.getByRole("button", { name: "Download JPG" }));
+  expect(api.saveShort).toHaveBeenCalledWith(
+    expect.objectContaining({
+      thumbnail_text: "A cover worth keeping",
+      thumbnail_style: "clean",
+    }),
+  );
+  expect(requestSignIn).not.toHaveBeenCalled();
+  await act(async () => {
+    finish({
+      ...short,
+      revision: 2,
+      thumbnail_text: "A cover worth keeping",
+      thumbnail_style: "clean",
+    });
+  });
+  expect(requestSignIn).toHaveBeenCalledOnce();
 });
