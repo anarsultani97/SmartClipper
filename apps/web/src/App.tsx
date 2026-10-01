@@ -940,7 +940,8 @@ function SourceWorkspace({
       </div>
       <div className="source-grid">
         <section className="source-player card">
-          {project.status === "ready" || localPreview ? (
+          {project.status !== "failed" &&
+          (project.status === "ready" || localPreview) ? (
             <>
               <video
                 ref={video}

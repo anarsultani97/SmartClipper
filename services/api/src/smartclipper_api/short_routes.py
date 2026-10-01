@@ -303,6 +303,11 @@ def install_short_routes(app, settings, sessions, get_project):
         with sessions() as db:
             short = get_short(db, short_id, user)
             original = short.transcript if edit.language == "original" else short.english_transcript
+            field = "transcript" if edit.language == "original" else "english_transcript"
+            if original is None and edit.language == "en":
+                project = get_project(db, short.project_id, user)
+                if project.detected_language == "en":
+                    original, field = short.transcript, "transcript"
             if original is None:
                 raise HTTPException(422, "Generate this caption track first.")
             duration = (short.end_ms - short.start_ms) / 1000
@@ -330,7 +335,6 @@ def install_short_routes(app, settings, sessions, get_project):
                         "review": False,
                     }
                 )
-            field = "transcript" if edit.language == "original" else "english_transcript"
             changed = db.execute(
                 update(Short)
                 .where(Short.id == short.id, Short.revision == edit.revision)

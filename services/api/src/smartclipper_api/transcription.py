@@ -80,7 +80,7 @@ def transcription_profile(settings, language, mode, vocabulary):
         "language": language,
         "mode": mode,
         "vocabulary": vocabulary,
-        "version": 2,
+        "version": 3,
     }
 
 
@@ -189,7 +189,37 @@ def transcribe(
         raise ValueError(
             "No clear speech was detected. Upload a timed SRT transcript or another video."
         )
-    return result, info.language
+    return sentence_segments(result), info.language
+
+
+def sentence_segments(segments):
+    """Batched ASR cues can span many sentences. Keep natural boundaries for clip selection."""
+    result = []
+    for cue in segments:
+        if not cue.get("words"):
+            result.append(cue)
+            continue
+        current = []
+
+        def append(words, review):
+            result.append(
+                {
+                    "start": words[0]["start"],
+                    "end": words[-1]["end"],
+                    "text": " ".join(w["text"] for w in words),
+                    "words": words,
+                    "review": review,
+                }
+            )
+
+        for word in cue["words"]:
+            current.append(word)
+            if re.search(r"[.!?。！？।][\"'”’)]*$", word["text"]):
+                append(current, cue.get("review", False))
+                current = []
+        if current:
+            append(current, cue.get("review", False))
+    return result
 
 
 def relative_segments(segments, start, end):
