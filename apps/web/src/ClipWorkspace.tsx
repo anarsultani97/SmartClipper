@@ -6,7 +6,6 @@ import {
   Download,
   ImagePlus,
   LoaderCircle,
-  Music2,
   Pencil,
   Play,
   X,
@@ -18,6 +17,7 @@ import { navigate } from "./App";
 import { formatTime } from "./media";
 import { useAuthGate } from "./AuthGate";
 import { ProgressRing } from "./ProgressRing";
+import { AudioStudio, normalizeAudio, previewAudio } from "./AudioStudio";
 import {
   EditedVideoPlayer,
   FramingToggle,
@@ -56,6 +56,7 @@ function CaptionPlayer({ short }: { short: api.Short }) {
   return (
     <>
       <EditedVideoPlayer
+        audioTracks={previewAudio(short)}
         src={api.mediaUrl(short.project_id, "preview")}
         edits={edits}
         start={start}
@@ -267,6 +268,7 @@ export function ClipWorkspace({
     value.thumbnail_style,
     value.thumbnail_text,
     normalizeEdits(value.video_edits),
+    normalizeAudio(value.audio_edits),
   ];
   const dirty =
     JSON.stringify(editable(draft)) !== JSON.stringify(editable(short));
@@ -411,7 +413,7 @@ export function ClipWorkspace({
           {!editing && (
             <div className="short-quick-actions">
               <button
-                className="text-button"
+                className="secondary quick-edit-button"
                 onClick={() => {
                   setEditing(true);
                   onActivate();
@@ -420,7 +422,7 @@ export function ClipWorkspace({
                 <Pencil size={14} /> Trim & adjust
               </button>
               <button
-                className="text-button"
+                className="secondary quick-cover-button"
                 disabled={busy || stale || !trimValid}
                 onClick={() => void editCover()}
               >
@@ -607,48 +609,12 @@ export function ClipWorkspace({
                   {captionNotice}
                 </p>
               )}
-              <label>
-                <span>
-                  <Music2 size={16} /> Music for your export
-                </span>
-                <select
-                  value={draft.music}
-                  onChange={(e) =>
-                    setDraft({ ...draft, music: e.target.value })
-                  }
-                >
-                  <option value="none">Original audio only</option>
-                  <option value="bright">Little lift · bright</option>
-                  <option value="calm">Room to think · calm</option>
-                  <option value="pulse">Keep moving · energetic</option>
-                </select>
-              </label>
-              <p className="hint">
-                Original instrumental beds, mixed quietly under your voice.
-                Music is applied when you render an export.
-              </p>
-              <details className="music-discovery">
-                <summary>Looking for a trending song?</summary>
-                <p>
-                  Find current music in the platform’s own library, then add it
-                  there after download. A song’s availability and license can
-                  differ by region, account, and platform.
-                </p>
-                <a
-                  target="_blank"
-                  rel="noreferrer"
-                  href="https://ads.tiktok.com/business/creativecenter/music/pc/en"
-                >
-                  Discover TikTok music ↗
-                </a>
-                <a
-                  target="_blank"
-                  rel="noreferrer"
-                  href="https://support.google.com/youtube/answer/13486873"
-                >
-                  YouTube Shorts music library ↗
-                </a>
-              </details>
+              <AudioStudio
+                short={draft}
+                onChange={setDraft}
+                onActivate={onActivate}
+                onError={onError}
+              />
               <div className="thumbnail-section">
                 <div className="section-heading">
                   <h3>The first impression.</h3>

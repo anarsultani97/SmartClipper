@@ -9,6 +9,7 @@ import {
   Download,
   Film,
   ImagePlus,
+  Link2,
   LoaderCircle,
   LogOut,
   Plus,
@@ -27,6 +28,7 @@ import { ClipWorkspace, ThumbnailEditor } from "./ClipWorkspace";
 import { ActivityDashboard } from "./ActivityDashboard";
 import { AuthGate, useAuthGate } from "./AuthGate";
 import { ProgressRing } from "./ProgressRing";
+import { LinkImport } from "./LinkImport";
 import {
   EditedVideoPlayer,
   VideoEditor,
@@ -203,6 +205,7 @@ export function App() {
   const [options, setOptions] = useState(defaultOptions);
   const [progress, setProgress] = useState<number | null>(null);
   const [uploadingName, setUploadingName] = useState("");
+  const [linkImportOpen, setLinkImportOpen] = useState(false);
   const [localPreview, setLocalPreview] = useState("");
   const [localPreviewId, setLocalPreviewId] = useState("");
   useEffect(
@@ -214,6 +217,7 @@ export function App() {
   useEffect(() => {
     setLocalPreview("");
     setLocalPreviewId("");
+    setLinkImportOpen(false);
   }, [user?.id]);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
@@ -429,7 +433,7 @@ export function App() {
             <span className="brand-mark">
               <Scissors size={21} />
             </span>
-            SmartClipper<span className="beta">BETA</span>
+            Clivvy<span className="beta">BETA</span>
           </a>
           <button
             className="new-project"
@@ -588,6 +592,13 @@ export function App() {
             <span className="quiet-badge">
               <ShieldCheck size={15} /> Yours to review. Yours to share.
             </span>
+            <button
+              className="secondary paste-link-button"
+              disabled={!user?.id}
+              onClick={() => setLinkImportOpen(true)}
+            >
+              <Link2 size={16} /> Paste video link
+            </button>
           </header>
           <input
             ref={input}
@@ -598,6 +609,25 @@ export function App() {
             onChange={(e) => void upload(e.target.files?.[0])}
           />
           <div className="content">
+            {linkImportOpen && (
+              <LinkImport
+                onClose={() => setLinkImportOpen(false)}
+                onImported={(project) => {
+                  ++refreshSequence.current;
+                  setLocalPreview("");
+                  setLocalPreviewId("");
+                  setProjects((old) => [
+                    project,
+                    ...old.filter((p) => p.id !== project.id),
+                  ]);
+                  setHighlightedProject(project.id);
+                  navigate(`/projects/${project.id}`);
+                  setNotice(
+                    "Your link is queued. Follow download and preparation in Recent videos.",
+                  );
+                }}
+              />
+            )}
             {progress !== null && (
               <section className="upload-progress" aria-live="polite">
                 <Upload size={21} />
@@ -763,6 +793,13 @@ export function App() {
                             : "Choose video"}
                         </button>
                         <small>MP4 · up to 3 GB · up to 30 minutes</small>
+                        <button
+                          className="text-button paste-link-inline"
+                          disabled={!user?.id}
+                          onClick={() => setLinkImportOpen(true)}
+                        >
+                          <Link2 size={16} /> Or paste a video link
+                        </button>
                         <div className="upload-foot">
                           <Check size={14} /> Original audio stays with your
                           story

@@ -6,34 +6,68 @@ import wave
 import numpy as np
 
 from .caption_styles import caption_ass
-from .schemas import VideoEdits
+from .schemas import AudioEdits, VideoEdits
 from .worker import run_media
 
 MUSIC = {
     "bright": {"name": "Little lift", "mood": "Bright", "recommendation": "Tips and discoveries"},
     "calm": {"name": "Room to think", "mood": "Calm", "recommendation": "Reflective stories"},
     "pulse": {"name": "Keep moving", "mood": "Pulse", "recommendation": "Energetic explanations"},
+    "lofi": {
+        "name": "Late afternoon",
+        "mood": "Lo-fi",
+        "recommendation": "Conversations and gaming",
+    },
+    "cinematic": {
+        "name": "The reveal",
+        "mood": "Cinematic",
+        "recommendation": "Build-ups and discoveries",
+    },
+    "playful": {
+        "name": "Small surprises",
+        "mood": "Playful",
+        "recommendation": "Funny moments and reactions",
+    },
 }
 
 
 def music_bed(path, mood, duration):
     # These original synthesized arrangements contain no commercial recordings.
     rate = 22050
-    time = np.arange(math.ceil(duration * rate)) / rate
-    chords = {
-        "bright": [261.63, 329.63, 392],
-        "calm": [220, 261.63, 329.63],
-        "pulse": [196, 246.94, 293.66],
+    tempo, base = {
+        "bright": (108, 261.63),
+        "calm": (72, 220),
+        "pulse": (124, 196),
+        "lofi": (84, 174.61),
+        "cinematic": (80, 146.83),
+        "playful": (116, 293.66),
     }[mood]
-    signal = sum(np.sin(2 * np.pi * note * time) for note in chords) / 3
-    beat = 0.3 + 0.7 * np.exp(-((time * (2 if mood == "pulse" else 1)) % 1) * 8)
-    fade = np.minimum(1, time / 0.5) * np.minimum(1, np.maximum(0, duration - time) / 0.5)
-    samples = (signal * beat * fade * 0.2 * 32767).astype("<i2")
     with wave.open(str(path), "wb") as target:
         target.setnchannels(1)
         target.setsampwidth(2)
         target.setframerate(rate)
-        target.writeframes(samples.tobytes())
+        # Chunked synthesis bounds memory even for slowed-down long shorts.
+        for chunk in range(math.ceil(duration)):
+            count = min(rate, math.ceil(duration * rate) - chunk * rate)
+            time = chunk + np.arange(count) / rate
+            beat = time * tempo / 60
+            roots = np.array([1, 0.7937, 0.8909, 0.6674])[(beat // 4).astype(int) % 4]
+            chord = (
+                sum(
+                    np.sin(2 * np.pi * base * roots * ratio * time) for ratio in (1, 1.2599, 1.4983)
+                )
+                / 3
+            )
+            envelope = 0.35 + 0.65 * np.exp(-(beat % 1) * 6)
+            bass = np.sin(2 * np.pi * base / 2 * roots * time) * np.exp(-(beat % 1) * 3)
+            melody_ratio = np.array([1, 1.2599, 1.4983, 2, 1.4983, 1.2599, 1.1225, 1])[
+                (beat // 2).astype(int) % 8
+            ]
+            melody = np.sin(2 * np.pi * base * 2 * melody_ratio * time)
+            melody *= np.exp(-((beat / 2) % 1) * (4 if mood == "playful" else 7))
+            signal = 0.45 * chord * envelope + 0.15 * bass + 0.16 * melody
+            fade = np.minimum(1, time / 0.5) * np.minimum(1, np.maximum(0, duration - time) / 0.5)
+            target.writeframes((signal * fade * 32767).astype("<i2").tobytes())
 
 
 def render_short(
@@ -52,9 +86,13 @@ def render_short(
     caption_position="lower",
     progress=None,
     video_edits=None,
+    audio_edits=None,
+    music_source=None,
+    voice_source=None,
 ):
     folder.mkdir(parents=True, exist_ok=True)
     edits = VideoEdits.model_validate(video_edits or {})
+    audio = AudioEdits.model_validate(audio_edits or {})
     duration = (end - start) / edits.speed
     args = [
         settings.ffmpeg_path,
@@ -71,9 +109,27 @@ def render_short(
         "-i",
         str(source.resolve()),
     ]
+    music_index, voice_index, next_index = None, None, 1
     if music != "none":
-        music_bed(folder / "music.wav", music, duration)
-        args += ["-i", str((folder / "music.wav").resolve())]
+        if music != "custom":
+            music_bed(folder / "music.wav", music, 60)
+            music_source = folder / "music.wav"
+        if not music_source or not music_source.is_file():
+            raise ValueError("Selected music is unavailable. Upload or choose it again.")
+        music_index, next_index = next_index, next_index + 1
+        args += [
+            "-stream_loop",
+            "-1",
+            "-ss",
+            str(audio.music_offset),
+            "-i",
+            str(music_source.resolve()),
+        ]
+    if voice_source:
+        if not voice_source.is_file():
+            raise ValueError("Selected voice recording is unavailable.")
+        voice_index = next_index
+        args += ["-i", str(voice_source.resolve())]
     width, height = (480, 854) if preview else (720, 1280)
     if edits.framing == "horizontal":
         width, height = height, width
@@ -118,26 +174,41 @@ def render_short(
         fades.append(f"fade=t=out:st={duration - fade_out}:d={fade_out}")
     if fades:
         graph = graph.removesuffix("[video]") + "," + ",".join(fades) + "[video]"
+    audio_inputs = []
     if has_audio:
         graph += (
             f";[0:a]asetpts=PTS/{edits.speed},atempo={edits.speed},"
-            f"volume={edits.volume},aresample=async=1:first_pts=0[voice]"
+            f"volume={edits.volume},aresample=async=1:first_pts=0,"
+            f"apad,atrim=duration={duration}[original]"
         )
-    if music != "none":
-        graph += ";[1:a]volume=0.16[bed]"
-    audio_source = "voice" if has_audio else "bed"
-    if music != "none" and has_audio:
-        graph += ";[voice][bed]amix=inputs=2:duration=first:normalize=0[mixed]"
-        audio_source = "mixed"
-    if has_audio or music != "none":
-        audio_filters = ["anull"]
+        audio_inputs.append("[original]")
+    if music_index is not None:
+        graph += (
+            f";[{music_index}:a]asetpts=PTS-STARTPTS,volume={audio.music_volume},"
+            f"atrim=duration={duration}[bed]"
+        )
+        audio_inputs.append("[bed]")
+    if voice_index is not None:
+        graph += (
+            f";[{voice_index}:a]asetpts=PTS-STARTPTS,volume={audio.voice_volume},"
+            f"adelay={round(audio.voice_start * 1000)}:all=1,apad,"
+            f"atrim=duration={duration}[recording]"
+        )
+        audio_inputs.append("[recording]")
+    if audio_inputs:
+        graph += (
+            ";"
+            + "".join(audio_inputs)
+            + f"amix=inputs={len(audio_inputs)}:duration=longest:normalize=0[mixed]"
+        )
+        audio_filters = ["alimiter=limit=0.95:level=0:latency=1", f"atrim=duration={duration}"]
         if fade_in:
             audio_filters.append(f"afade=t=in:st=0:d={fade_in}")
         if fade_out:
             audio_filters.append(f"afade=t=out:st={duration - fade_out}:d={fade_out}")
-        graph += f";[{audio_source}]" + ",".join(audio_filters) + "[audio]"
+        graph += ";[mixed]" + ",".join(audio_filters) + "[audio]"
     args += ["-filter_complex_threads", "2", "-filter_complex", graph, "-map", "[video]"]
-    if has_audio or music != "none":
+    if audio_inputs:
         args += ["-map", "[audio]"]
     args += [
         "-t",

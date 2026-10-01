@@ -193,6 +193,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/projects/link": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Import Link */
+    post: operations["import_link_api_v1_projects_link_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/projects/{project_id}/selection": {
     parameters: {
       query?: never;
@@ -465,6 +482,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/shorts/{short_id}/audio": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Audio */
+    get: operations["list_audio_api_v1_shorts__short_id__audio_get"];
+    put?: never;
+    /** Upload Audio */
+    post: operations["upload_audio_api_v1_shorts__short_id__audio_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/shorts/{short_id}/audio/{asset_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Audio Media */
+    get: operations["audio_media_api_v1_shorts__short_id__audio__asset_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/music/{track_id}/preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Music Preview */
+    get: operations["music_preview_api_v1_music__track_id__preview_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/analytics": {
     parameters: {
       query?: never;
@@ -486,6 +555,46 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AudioAssetView */
+    AudioAssetView: {
+      /** Id */
+      id: string;
+      /** Short Id */
+      short_id: string;
+      /** Kind */
+      kind: string;
+      /** Filename */
+      filename: string;
+      /** Duration Seconds */
+      duration_seconds: number;
+    };
+    /** AudioEdits */
+    AudioEdits: {
+      /** Music Asset Id */
+      music_asset_id?: string | null;
+      /** Voice Asset Id */
+      voice_asset_id?: string | null;
+      /**
+       * Music Volume
+       * @default 0.16
+       */
+      music_volume: number;
+      /**
+       * Voice Volume
+       * @default 1
+       */
+      voice_volume: number;
+      /**
+       * Music Offset
+       * @default 0
+       */
+      music_offset: number;
+      /**
+       * Voice Start
+       * @default 0
+       */
+      voice_start: number;
+    };
     /** Caption */
     Caption: {
       /** Start */
@@ -624,6 +733,11 @@ export interface components {
        */
       progress: number;
     };
+    /** LinkImport */
+    LinkImport: {
+      /** Url */
+      url: string;
+    };
     /** ProjectView */
     ProjectView: {
       /** Id */
@@ -705,7 +819,15 @@ export interface components {
        * @default none
        * @enum {string}
        */
-      music: "none" | "bright" | "calm" | "pulse";
+      music:
+        | "none"
+        | "bright"
+        | "calm"
+        | "pulse"
+        | "lofi"
+        | "cinematic"
+        | "playful"
+        | "custom";
       /**
        * Thumbnail
        * @default 0
@@ -723,6 +845,7 @@ export interface components {
        */
       thumbnail_text: string;
       video_edits?: components["schemas"]["VideoEdits"] | null;
+      audio_edits?: components["schemas"]["AudioEdits"] | null;
     };
     /** ShortView */
     ShortView: {
@@ -775,6 +898,7 @@ export interface components {
       /** Transcript */
       transcript: components["schemas"]["Caption"][];
       video_edits?: components["schemas"]["VideoEdits"];
+      audio_edits?: components["schemas"]["AudioEdits"];
     };
     /** SignupCredentials */
     SignupCredentials: {
@@ -1247,6 +1371,39 @@ export interface operations {
         };
         content: {
           "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  import_link_api_v1_projects_link_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LinkImport"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectView"];
         };
       };
       /** @description Validation Error */
@@ -1769,6 +1926,134 @@ export interface operations {
         };
         content: {
           "application/json": unknown;
+        };
+      };
+    };
+  };
+  list_audio_api_v1_shorts__short_id__audio_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        short_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AudioAssetView"][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  upload_audio_api_v1_shorts__short_id__audio_post: {
+    parameters: {
+      query: {
+        kind: "music" | "voice";
+        filename?: string;
+      };
+      header?: never;
+      path: {
+        short_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AudioAssetView"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  audio_media_api_v1_shorts__short_id__audio__asset_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        short_id: string;
+        asset_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  music_preview_api_v1_music__track_id__preview_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        track_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };

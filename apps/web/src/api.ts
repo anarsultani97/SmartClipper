@@ -33,11 +33,13 @@ type Thumbnail = OptionalDefaults<
 export type Short = Omit<
   OptionalDefaults<
     components["schemas"]["ShortView"],
-    "caption_style" | "caption_position" | "video_edits"
+    "caption_style" | "caption_position" | "video_edits" | "audio_edits"
   >,
   "thumbnails"
 > & { thumbnails: Thumbnail[] };
 export type VideoEdits = components["schemas"]["VideoEdits"];
+export type AudioEdits = components["schemas"]["AudioEdits"];
+export type AudioAsset = components["schemas"]["AudioAssetView"];
 let csrf = "";
 export const setCsrf = (value: string) => {
   csrf = value;
@@ -70,6 +72,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 export const listProjects = () => request<Project[]>("/projects");
+export const importVideoLink = (url: string) =>
+  request<Project>("/projects/link", json("POST", { url }));
 export const removeQueuedVideo = (id: string) =>
   request(`/projects/${id}`, { method: "DELETE" });
 const json = (method: string, body: unknown) => ({
@@ -117,6 +121,7 @@ export const saveShort = (short: Short) =>
       thumbnail_style: short.thumbnail_style,
       thumbnail_text: short.thumbnail_text,
       video_edits: short.video_edits,
+      audio_edits: short.audio_edits,
     }),
   );
 export const saveProjectEdits = (project: Project, edits: VideoEdits) =>
@@ -161,6 +166,24 @@ export const uploadThumbnail = (short: Short, file: File) =>
     method: "PUT",
     body: file,
   });
+export const audioAssets = (id: string) =>
+  request<AudioAsset[]>(`/shorts/${id}/audio`);
+export const uploadAudio = (id: string, kind: "music" | "voice", file: File) =>
+  request<AudioAsset>(
+    `/shorts/${id}/audio?kind=${kind}&filename=${encodeURIComponent(file.name)}`,
+    { method: "POST", body: file },
+  );
+export const audioMedia = (id: string, asset: string) =>
+  `${base}/shorts/${id}/audio/${asset}`;
+export type MusicTrack = {
+  id: string;
+  name: string;
+  mood: string;
+  recommendation: string;
+  license: string;
+};
+export const musicLibrary = () => request<MusicTrack[]>("/music");
+export const musicPreview = (id: string) => `${base}/music/${id}/preview`;
 export type Analytics = {
   scope: string;
   can_view_team: boolean;

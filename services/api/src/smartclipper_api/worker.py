@@ -2,8 +2,11 @@
 
 import argparse
 import json
+import os
+import queue
 import re
 import subprocess
+import sys
 import threading
 import time
 
@@ -241,6 +244,89 @@ def prepare(folder, settings: Settings, cancelled=None, progress=None) -> dict:
     return metadata
 
 
+def download_link(folder, project, settings, cancelled, progress):
+    folder.mkdir(parents=True, exist_ok=True)
+    messages = queue.Queue()
+    progress("Connecting to video platform", 1)
+    with subprocess.Popen(
+        [sys.executable, "-m", "smartclipper_api.link_import"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        creationflags=(subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
+        if os.name == "nt"
+        else 0,
+        start_new_session=os.name != "nt",
+    ) as process:
+        process.stdin.write(
+            json.dumps(
+                {
+                    "url": project.source_url,
+                    "folder": str(folder.resolve()),
+                    "limit": settings.max_upload_bytes,
+                    "duration": settings.max_duration_seconds,
+                    "ffmpeg": settings.ffmpeg_path,
+                }
+            ).encode()
+        )
+        process.stdin.close()
+
+        def read():
+            for line in process.stdout:
+                try:
+                    messages.put(json.loads(line))
+                except (ValueError, UnicodeDecodeError):
+                    pass
+
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        began, result, error, reported = time.monotonic(), None, None, 1
+        try:
+            while True:
+                if cancelled():
+                    raise ImportCancelled()
+                if time.monotonic() - began > 900:
+                    raise ValueError(
+                        "Link import timed out. Try a shorter video or upload the MP4."
+                    )
+                if process.poll() is not None:
+                    reader.join(timeout=2)
+                while not messages.empty():
+                    data = messages.get_nowait()
+                    if "error" in data:
+                        error = data["error"]
+                    elif "filename" in data:
+                        result = data
+                    elif "progress" in data:
+                        reported = max(reported, 2 + round(data["progress"] * 0.38))
+                        progress("Downloading video from link", reported)
+                if process.poll() is not None:
+                    break
+                try:
+                    process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    pass
+            if process.returncode or not result:
+                raise ValueError(
+                    error or "Link import failed. Try another public video or upload MP4."
+                )
+            return result
+        finally:
+            if process.poll() is None:
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+                else:
+                    import signal
+
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+            reader.join(timeout=2)
+
+
 def process_one(settings: Settings, sessions, processor=prepare) -> bool:
     with sessions() as session:
         project = session.scalar(
@@ -273,8 +359,24 @@ def process_one(settings: Settings, sessions, processor=prepare) -> bool:
             db.commit()
 
     try:
+        if project.source_url:
+            result = download_link(
+                settings.data_dir / project_id, project, settings, cancelled, progress
+            )
+            with sessions() as db:
+                db.execute(
+                    update(Project)
+                    .where(Project.id == project_id, Project.status == "processing")
+                    .values(filename=result["filename"], size_bytes=result["size_bytes"])
+                )
+                db.commit()
+        preparation_progress = (
+            (lambda message, percent: progress(message, 40 + round(percent * 0.59)))
+            if project.source_url
+            else progress
+        )
         metadata = (
-            prepare(settings.data_dir / project_id, settings, cancelled, progress)
+            prepare(settings.data_dir / project_id, settings, cancelled, preparation_progress)
             if processor is prepare
             else processor(settings.data_dir / project_id, settings)
         )

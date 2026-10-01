@@ -18,6 +18,7 @@ from .database import Job, Short, User
 from .pipeline import short_folder
 from .rendering import MUSIC
 from .schemas import (
+    AudioEdits,
     CaptionEdit,
     GenerateOptions,
     JobView,
@@ -54,6 +55,7 @@ def short_view(short):
         "export_revision",
         "quality_note",
         "video_edits",
+        "audio_edits",
     )
     return {
         **{name: getattr(short, name) for name in names},
@@ -202,6 +204,10 @@ def install_short_routes(app, settings, sessions, get_project):
     def edit_short(short_id: str, edit: ShortEdit, user: CurrentUser):
         with sessions() as db:
             short = get_short(db, short_id, user)
+            from .audio_routes import validate_audio_assets
+
+            audio = edit.audio_edits or AudioEdits.model_validate(short.audio_edits)
+            validate_audio_assets(db, short, audio, edit.music)
             if edit.subtitle_language == "en" and not short.english_transcript:
                 project = get_project(db, short.project_id, user)
                 if project.detected_language != "en":
@@ -218,7 +224,14 @@ def install_short_routes(app, settings, sessions, get_project):
                 raise HTTPException(422, "Trim must stay within the suggested short.")
             if (trim_end - edits.trim_start_ms) / 1000 / edits.speed < 0.5:
                 raise HTTPException(422, "Keep at least half a second in your short.")
-            values = edit.model_dump(exclude={"revision", "video_edits"})
+            if (
+                audio.voice_asset_id
+                and audio.voice_start >= (trim_end - edits.trim_start_ms) / 1000 / edits.speed
+            ):
+                raise HTTPException(422, "Start your voiceover before this short ends.")
+            values = edit.model_dump(exclude={"revision", "video_edits", "audio_edits"})
+            if edit.audio_edits is not None:
+                values["audio_edits"] = edit.audio_edits.model_dump()
             if edit.video_edits is not None:
                 values["video_edits"] = edit.video_edits.model_dump()
             changed = db.execute(
@@ -258,6 +271,7 @@ def install_short_routes(app, settings, sessions, get_project):
                 "caption_style": short.caption_style,
                 "caption_position": short.caption_position,
                 "video_edits": VideoEdits.model_validate(short.video_edits).model_dump(),
+                "audio_edits": AudioEdits.model_validate(short.audio_edits).model_dump(),
             }
             job = Job(id=str(uuid4()), project_id=short.project_id, kind="export", options=options)
             db.add(job)
@@ -293,7 +307,7 @@ def install_short_routes(app, settings, sessions, get_project):
             return FileResponse(
                 path,
                 media_type=mime,
-                filename="smartclipper-short.mp4" if kind == "export" else None,
+                filename="clivvy-short.mp4" if kind == "export" else None,
             )
 
     @app.get("/api/v1/shorts/{short_id}/captions/{language}")
@@ -419,8 +433,12 @@ def install_short_routes(app, settings, sessions, get_project):
             {
                 "id": key,
                 **value,
-                "license": "Original synthesized SmartClipper arrangement; "
+                "license": "Original synthesized Clivvy arrangement; "
                 "included for use in your exports. Not a chart or trending-song claim.",
             }
             for key, value in MUSIC.items()
         ]
+
+    from .audio_routes import install_audio_routes
+
+    install_audio_routes(app, settings, sessions, get_short)

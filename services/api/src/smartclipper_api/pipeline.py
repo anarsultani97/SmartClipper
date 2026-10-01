@@ -218,6 +218,10 @@ def export(job, settings, sessions, stage):
             word["start"] /= edits.speed
             word["end"] /= edits.speed
     folder = short_folder(settings, short) / "exports" / job.id
+    from .audio_routes import asset_path
+    from .schemas import AudioEdits
+
+    audio = AudioEdits.model_validate(options.get("audio_edits") or {})
     render_short(
         settings.data_dir / project.id / "preview.mp4",
         folder,
@@ -230,6 +234,13 @@ def export(job, settings, sessions, stage):
         caption_style=options.get("caption_style", "pop"),
         caption_position=options.get("caption_position", "lower"),
         video_edits=edits.model_dump(),
+        audio_edits=audio.model_dump(),
+        music_source=asset_path(settings, short, audio.music_asset_id)
+        if audio.music_asset_id
+        else None,
+        voice_source=asset_path(settings, short, audio.voice_asset_id)
+        if audio.voice_asset_id
+        else None,
         progress=lambda seconds: stage(
             "Rendering your export",
             min(98, 5 + round(93 * seconds / ((trim_end - trim_start) / edits.speed))),

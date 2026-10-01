@@ -49,6 +49,7 @@ class Project(Base):
     transcript_language: Mapped[str | None] = mapped_column(String(12), nullable=True)
     transcription_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     video_edits: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
 
 class User(Base):
@@ -130,6 +131,16 @@ class Short(Base):
     export_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quality_note: Mapped[str] = mapped_column(String(500), default="")
     video_edits: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    audio_edits: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+
+
+class AudioAsset(Base):
+    __tablename__ = "audio_assets"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    short_id: Mapped[str] = mapped_column(ForeignKey("shorts.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(12))
+    filename: Mapped[str] = mapped_column(String(255))
+    duration_seconds: Mapped[float] = mapped_column(Float)
 
 
 def make_database(url: str):

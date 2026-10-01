@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "SmartClipper API",
+    "title": "Clivvy API",
     "version": "0.2.0"
   },
   "paths": {
@@ -358,6 +358,44 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/link": {
+      "post": {
+        "summary": "Import Link",
+        "operationId": "import_link_api_v1_projects_link_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectView"
+                }
               }
             }
           },
@@ -1084,6 +1122,192 @@
         }
       }
     },
+    "/api/v1/shorts/{short_id}/audio": {
+      "get": {
+        "summary": "List Audio",
+        "operationId": "list_audio_api_v1_shorts__short_id__audio_get",
+        "parameters": [
+          {
+            "name": "short_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Short Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AudioAssetView"
+                  },
+                  "title": "Response List Audio Api V1 Shorts  Short Id  Audio Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Upload Audio",
+        "operationId": "upload_audio_api_v1_shorts__short_id__audio_post",
+        "parameters": [
+          {
+            "name": "short_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Short Id"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "music",
+                "voice"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "My audio",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioAssetView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shorts/{short_id}/audio/{asset_id}": {
+      "get": {
+        "summary": "Audio Media",
+        "operationId": "audio_media_api_v1_shorts__short_id__audio__asset_id__get",
+        "parameters": [
+          {
+            "name": "short_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Short Id"
+            }
+          },
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/music/{track_id}/preview": {
+      "get": {
+        "summary": "Music Preview",
+        "operationId": "music_preview_api_v1_music__track_id__preview_get",
+        "parameters": [
+          {
+            "name": "track_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Track Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/analytics": {
       "get": {
         "summary": "Analytics",
@@ -1129,6 +1353,98 @@
   },
   "components": {
     "schemas": {
+      "AudioAssetView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "short_id": {
+            "type": "string",
+            "title": "Short Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "title": "Duration Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "short_id",
+          "kind",
+          "filename",
+          "duration_seconds"
+        ],
+        "title": "AudioAssetView"
+      },
+      "AudioEdits": {
+        "properties": {
+          "music_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9-]{36}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Music Asset Id"
+          },
+          "voice_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9-]{36}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Asset Id"
+          },
+          "music_volume": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Music Volume",
+            "default": 0.16
+          },
+          "voice_volume": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Voice Volume",
+            "default": 1
+          },
+          "music_offset": {
+            "type": "number",
+            "maximum": 600.0,
+            "minimum": 0.0,
+            "title": "Music Offset",
+            "default": 0
+          },
+          "voice_start": {
+            "type": "number",
+            "maximum": 360.0,
+            "minimum": 0.0,
+            "title": "Voice Start",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AudioEdits"
+      },
       "Caption": {
         "properties": {
           "start": {
@@ -1421,6 +1737,21 @@
         ],
         "title": "JobView"
       },
+      "LinkImport": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 10,
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "LinkImport"
+      },
       "ProjectView": {
         "properties": {
           "id": {
@@ -1609,7 +1940,11 @@
               "none",
               "bright",
               "calm",
-              "pulse"
+              "pulse",
+              "lofi",
+              "cinematic",
+              "playful",
+              "custom"
             ],
             "title": "Music",
             "default": "none"
@@ -1641,6 +1976,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VideoEdits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audio_edits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioEdits"
               },
               {
                 "type": "null"
@@ -1761,6 +2106,9 @@
           },
           "video_edits": {
             "$ref": "#/components/schemas/VideoEdits"
+          },
+          "audio_edits": {
+            "$ref": "#/components/schemas/AudioEdits"
           }
         },
         "type": "object",

@@ -4,6 +4,29 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
+class LinkImport(BaseModel):
+    url: str = Field(min_length=10, max_length=2048)
+
+
+class AudioEdits(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    music_asset_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
+    voice_asset_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
+    music_volume: float = Field(default=0.16, ge=0, le=1)
+    voice_volume: float = Field(default=1, ge=0, le=1)
+    music_offset: float = Field(default=0, ge=0, le=600)
+    voice_start: float = Field(default=0, ge=0, le=360)
+
+
+class AudioAssetView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    short_id: str
+    kind: str
+    filename: str
+    duration_seconds: float
+
+
 class VideoEdits(BaseModel):
     """Small, reversible metadata; never accept arbitrary FFmpeg expressions."""
 
@@ -99,11 +122,14 @@ class ShortEdit(BaseModel):
     subtitle_language: Literal["original", "en"] = "original"
     caption_style: Literal["pop", "clean", "karaoke"] = "pop"
     caption_position: Literal["lower", "middle"] = "lower"
-    music: Literal["none", "bright", "calm", "pulse"] = "none"
+    music: Literal["none", "bright", "calm", "pulse", "lofi", "cinematic", "playful", "custom"] = (
+        "none"
+    )
     thumbnail: int = Field(default=0, ge=0, le=3)
     thumbnail_style: Literal["bold", "clean", "minimal"] = "bold"
     thumbnail_text: str = Field(default="", max_length=100)
     video_edits: VideoEdits | None = None
+    audio_edits: AudioEdits | None = None
 
 
 class CaptionWord(BaseModel):
@@ -170,6 +196,7 @@ class ShortView(BaseModel):
     english_available: bool
     transcript: list[Caption]
     video_edits: VideoEdits = Field(default_factory=VideoEdits)
+    audio_edits: AudioEdits = Field(default_factory=AudioEdits)
 
 
 class JobView(BaseModel):
