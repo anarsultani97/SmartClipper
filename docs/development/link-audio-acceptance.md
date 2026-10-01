@@ -18,3 +18,13 @@ Date: 2026-10-01. Local Windows development build. Unit suites and automatic CI 
 Ignored local evidence: `.cache/link-audio-acceptance/report.json`, synthetic fixtures, downloaded MP4 and screenshots. Development account credentials and media are not committed. Browser inspection used the user's Windows Chrome viewport; no macOS/Safari or production-load claim is made.
 
 Architecture and music-provider integration plan: [ADR 0006](../architecture/0006-link-import-audio-studio.md).
+
+## Review corrections and follow-up evidence
+
+Independent review requested four corrections. Preview audio now uses a stable per-track object ref, with the captured media element paused only on genuine cleanup. External downloader execution is blocked at both ExternalFD and FFmpegFD execution entrypoints, including HLS fallback. New imports and retries share the owner-locked quota check. In-flight guest audio uploads resolve the durable account claim under the guest row lock before final ownership checking.
+
+Manual follow-up passed: two linked retries reached the quota and both a third retry and a new import returned 429; signing in while streaming a headerless WebM preserved the take (201), with claimed-account playback succeeding (200); direct external/FFmpeg downloader entrypoints failed closed; actual local merging passed with the file/pipe whitelist; private DNS and connection attempts were rejected before connection. With the corrected guard enabled, a separate development-account public YouTube import of “Me at the zoo” completed at 100% (19.064 seconds, 533,931 bytes).
+
+Browser playback observations after the ref correction advanced the music clock from approximately 0 to 39.8 seconds, matching the source video's short-relative clock within approximately 40 ms at the later observation. Source and music were paused together when the preview stopped. No indexed changing callback ref remains in the audio component.
+
+Static checks: frontend TypeScript/build and Prettier passed; JS bundle 94.97 KB gzip (approximately 3.5 KB above the preceding editor build). Python Ruff passed. Migration 0009 applied. No frontend runtime dependency was added.

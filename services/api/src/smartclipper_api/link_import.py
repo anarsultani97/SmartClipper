@@ -94,6 +94,20 @@ def restrict_network():
     socket.socket.connect_ex = guarded_connect_ex
 
 
+def restrict_downloaders():
+    from yt_dlp.downloader.external import ExternalFD, FFmpegFD
+
+    def blocked(*args, **kwargs):
+        raise ValueError("This format needs an external downloader. Upload an MP4 instead.")
+
+    # HlsFD can call FFmpegFD directly even when the configured downloader is
+    # native. Fail closed at its execution method, including direct fallback.
+    ExternalFD.real_download = blocked
+    ExternalFD._call_downloader = blocked
+    FFmpegFD.real_download = blocked
+    FFmpegFD._call_downloader = blocked
+
+
 def main():
     from yt_dlp import YoutubeDL
 
@@ -101,6 +115,7 @@ def main():
     link = video_link(spec["url"])
     root = Path(spec["folder"]).resolve()
     restrict_network()
+    restrict_downloaders()
 
     class Quiet:
         def debug(self, message):

@@ -173,8 +173,18 @@ def install_audio_routes(app, settings, sessions, get_short):
 
             duration = await run_in_threadpool(normalize)
             with sessions() as db:
-                # Recheck ownership/status after the upload; guest claims use project ownership.
-                get_short(db, short_id, user)
+                # Serialize completion with sign_in's guest claim. If sign-in
+                # won, the already-authorized upload follows the durable claim.
+                claimed_by = db.scalar(
+                    update(User)
+                    .where(User.id == user.id)
+                    .values(claimed_by=User.claimed_by)
+                    .returning(User.claimed_by)
+                )
+                owner = db.get(User, claimed_by) if claimed_by else user
+                if owner is None:
+                    raise HTTPException(404, "Audio workspace is unavailable.")
+                get_short(db, short_id, owner)
                 stored = db.get(AudioAsset, asset.id)
                 stored.duration_seconds = duration
                 db.commit()

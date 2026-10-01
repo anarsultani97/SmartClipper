@@ -324,88 +324,111 @@ export function VideoEditor({
   );
 }
 
+type AudioTrack = {
+  src: string;
+  volume: number;
+  startAt: number;
+  offset: number;
+  loop: boolean;
+};
+function MixedAudioTrack({
+  track,
+  elapsed,
+  playing,
+  fade,
+}: {
+  track: AudioTrack;
+  elapsed: number;
+  playing: boolean;
+  fade: number;
+}) {
+  const player = useRef<HTMLAudioElement>(null);
+  const [error, setError] = useState("");
+  const sync = () => {
+    const audio = player.current;
+    if (!audio) return;
+    audio.volume = Math.max(0, Math.min(1, track.volume * fade));
+    if (
+      !audio.readyState ||
+      !Number.isFinite(audio.duration) ||
+      audio.duration <= 0
+    )
+      return;
+    const desired = track.offset + elapsed - track.startAt;
+    const active =
+      playing && desired >= 0 && (track.loop || desired < audio.duration);
+    const position = track.loop
+      ? Math.max(0, desired) % audio.duration
+      : Math.max(0, Math.min(desired, audio.duration));
+    if (Math.abs(audio.currentTime - position) > 0.15)
+      audio.currentTime = position;
+    if (active && audio.paused)
+      void audio.play().catch(() => {
+        if (player.current === audio)
+          setError(
+            "Added audio could not play. Press play again or reselect your track.",
+          );
+      });
+    if (!active && !audio.paused) audio.pause();
+  };
+  useEffect(sync, [
+    track.src,
+    track.volume,
+    track.startAt,
+    track.offset,
+    track.loop,
+    elapsed,
+    playing,
+    fade,
+  ]);
+  useEffect(() => {
+    const element = player.current;
+    return () => element?.pause();
+  }, []);
+  return (
+    <>
+      <audio
+        ref={player}
+        src={track.src}
+        loop={track.loop}
+        preload="metadata"
+        onLoadedMetadata={sync}
+        onError={() =>
+          setError(
+            "Selected audio is unavailable. Try uploading or selecting it again.",
+          )
+        }
+      />
+      {error && (
+        <p className="editor-validation" role="status">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
 function MixedAudio({
   tracks,
   elapsed,
   playing,
   fade,
 }: {
-  tracks: {
-    src: string;
-    volume: number;
-    startAt: number;
-    offset: number;
-    loop: boolean;
-  }[];
+  tracks: AudioTrack[];
   elapsed: number;
   playing: boolean;
   fade: number;
 }) {
-  const players = useRef<(HTMLAudioElement | null)[]>([]);
-  const [error, setError] = useState("");
-  const sync = (player: HTMLAudioElement, track: (typeof tracks)[number]) => {
-    player.volume = Math.max(0, Math.min(1, track.volume * fade));
-    if (
-      !player.readyState ||
-      !Number.isFinite(player.duration) ||
-      player.duration <= 0
-    )
-      return;
-    const desired = track.offset + elapsed - track.startAt;
-    const active =
-      playing && desired >= 0 && (track.loop || desired < player.duration);
-    const position = track.loop
-      ? Math.max(0, desired) % player.duration
-      : Math.max(0, Math.min(desired, player.duration));
-    if (Math.abs(player.currentTime - position) > 0.15)
-      player.currentTime = position;
-    if (active && player.paused)
-      void player
-        .play()
-        .catch(() =>
-          setError(
-            "Added audio could not play. Press play again or reselect your track.",
-          ),
-        );
-    if (!active && !player.paused) player.pause();
-  };
-  useEffect(() => {
-    tracks.forEach((track, index) => {
-      const player = players.current[index];
-      if (player) sync(player, track);
-    });
-  }, [tracks, elapsed, playing, fade]);
-  useEffect(
-    () => () => {
-      players.current.forEach((player) => player?.pause());
-    },
-    [],
-  );
   return (
     <>
-      {tracks.map((track, index) => (
-        <audio
+      {tracks.map((track) => (
+        <MixedAudioTrack
           key={track.src}
-          ref={(element) => {
-            if (!element) players.current[index]?.pause();
-            players.current[index] = element;
-          }}
-          src={track.src}
-          loop={track.loop}
-          preload="metadata"
-          onLoadedMetadata={(e) => sync(e.currentTarget, track)}
-          onError={() =>
-            setError(
-              "Selected audio is unavailable. Try uploading or selecting it again.",
-            )
-          }
+          track={track}
+          elapsed={elapsed}
+          playing={playing}
+          fade={fade}
         />
       ))}
-      {error && (
-        <p className="editor-validation" role="status">
-          {error}
-        </p>
-      )}
     </>
   );
 }

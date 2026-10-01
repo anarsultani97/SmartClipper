@@ -66,6 +66,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Project not found.")
         return project
 
+    def link_owner_and_quota(db, user):
+        claimed_by = db.scalar(
+            update(User)
+            .where(User.id == user.id)
+            .values(claimed_by=User.claimed_by)
+            .returning(User.claimed_by)
+        )
+        owner_id = claimed_by or user.id
+        if owner_id != user.id:
+            db.execute(update(User).where(User.id == owner_id).values(claimed_by=User.claimed_by))
+        count = db.scalar(
+            select(func.count(Project.id)).where(
+                Project.owner_id == owner_id,
+                Project.source_url.is_not(None),
+                Project.status.in_(["queued", "processing"]),
+            )
+        )
+        if count >= settings.max_link_imports:
+            raise HTTPException(429, "Wait for a linked video to finish before adding another.")
+        return owner_id
+
     @app.get("/api/v1/health")
     def health():
         return {
@@ -109,22 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, str(exc)) from exc
         with sessions() as db:
             # Serialize quota and guest/account transfer against the existing owner row.
-            claimed_by = db.scalar(
-                update(User)
-                .where(User.id == user.id)
-                .values(claimed_by=User.claimed_by)
-                .returning(User.claimed_by)
-            )
-            owner_id = claimed_by or user.id
-            count = db.scalar(
-                select(func.count(Project.id)).where(
-                    Project.owner_id == owner_id,
-                    Project.source_url.is_not(None),
-                    Project.status.in_(["queued", "processing"]),
-                )
-            )
-            if count >= settings.max_link_imports:
-                raise HTTPException(429, "Wait for a linked video to finish before adding another.")
+            owner_id = link_owner_and_quota(db, user)
             project = Project(
                 id=str(uuid4()),
                 owner_id=owner_id,
@@ -261,6 +267,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             project = get_project(session, project_id, user)
             if project.status != "failed":
                 raise HTTPException(409, "Only failed imports can be retried.")
+            if project.source_url:
+                link_owner_and_quota(session, user)
             project.status, project.error = "queued", None
             project.progress, project.stage = 0, "Waiting for worker"
             session.commit()
