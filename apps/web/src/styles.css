@@ -2499,9 +2499,37 @@ details summary {
 .paste-link-button {
   margin-left: auto;
   white-space: nowrap;
+  background: #ebe4ff;
+  color: #48327c;
+  border: 1px solid #d0bff2;
+  box-shadow: 0 4px 12px #60429424;
+  font-weight: 650;
+  min-height: 44px;
+}
+.paste-link-button:hover {
+  background: #dfd3fa;
+  box-shadow: 0 6px 16px #60429435;
+}
+.paste-link-button:focus-visible,
+.paste-link-inline:focus-visible {
+  outline: 3px solid #8d70ba;
+  outline-offset: 3px;
 }
 .paste-link-inline {
   margin-top: 16px;
+  background: #f0eaff;
+  color: #48327c;
+  border: 1px solid #ddcff5;
+  padding: 11px 16px;
+  border-radius: 11px;
+  box-shadow: 0 3px 10px #6042941c;
+}
+.paste-link-inline:hover {
+  background: #e5d9fb;
+}
+.auth-form input[aria-invalid="true"] {
+  border-color: #aa493f;
+  box-shadow: 0 0 0 3px #aa493f15;
 }
 .link-import-dialog {
   width: min(540px, calc(100vw - 40px));

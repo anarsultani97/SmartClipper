@@ -45,18 +45,46 @@ export const setCsrf = (value: string) => {
   csrf = value;
 };
 const base = "/api/v1";
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+    public field?: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(base + path, {
-    ...init,
-    headers: { ...init?.headers, ...(csrf ? { "X-CSRF-Token": csrf } : {}) },
-  });
+  let response: Response;
+  try {
+    response = await fetch(base + path, {
+      ...init,
+      credentials: "same-origin",
+      headers: { ...init?.headers, ...(csrf ? { "X-CSRF-Token": csrf } : {}) },
+    });
+  } catch {
+    throw new ApiError(
+      "We couldn't reach the app service. Check your connection and try again.",
+      0,
+    );
+  }
   const data = await response.json().catch(() => {
     throw new Error(
       "We couldn't reach the app service. Please try again shortly.",
     );
   });
   if (!response.ok) {
-    throw new Error(
+    if (typeof data.detail?.message === "string") {
+      throw new ApiError(
+        data.detail.message,
+        response.status,
+        data.detail.code,
+        data.detail.field,
+      );
+    }
+    throw new ApiError(
       typeof data.detail === "string"
         ? data.detail
         : Array.isArray(data.detail)
@@ -67,6 +95,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
               )
               .join(" ")
           : "The request could not be completed.",
+      response.status,
     );
   }
   return data;
@@ -86,16 +115,28 @@ export const guestWorkspace = () =>
   request<User>("/auth/guest", { method: "POST" });
 export const providers = () =>
   request<{ google: boolean; facebook: boolean }>("/auth/providers");
-export const authenticate = (
+export const authenticate = async (
   signup: boolean,
   email: string,
   password: string,
   name: string,
-) =>
-  request<User>(
+) => {
+  // Read the current cookie's token, rather than submitting a stale guest CSRF
+  // token after another tab signs in/out. Never create a new guest here.
+  try {
+    const current = await currentUser();
+    setCsrf(current.csrf);
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 401)) throw error;
+    setCsrf("");
+  }
+  const user = await request<User>(
     signup ? "/auth/signup" : "/auth/login",
     json("POST", { email, password, name }),
   );
+  setCsrf(user.csrf);
+  return user;
+};
 export const logout = () => request("/auth/logout", { method: "POST" });
 export const generate = (id: string, options: Options) =>
   request<Job>(`/projects/${id}/generate`, json("POST", options));
