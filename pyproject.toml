@@ -19,6 +19,7 @@ dependencies = [
     "filelock>=4.0.7",
     "opencv-python-headless>=4.13,<5",
     "yt-dlp[default]>=2026.8.19",
+    "joserfc>=1.7.5",
 ]
 
 [dependency-groups]

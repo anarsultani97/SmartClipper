@@ -1,5 +1,7 @@
 # Google sign-in setup
 
+For current email errors, Google and Facebook setup, see [social sign-in](social-sign-in.md).
+
 SmartClipper uses a server-side authorization-code flow with OpenID Connect, PKCE and verified ID tokens. The client secret stays in the API environment. Email works without a Google project.
 
 1. Open your Google Cloud project's [Google Auth Platform clients](https://console.cloud.google.com/auth/clients). Configure the app name, support contact and audience. While the app is in testing, add the Google accounts that will test it.

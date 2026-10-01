@@ -12,7 +12,12 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import HTTPException, Request, Response
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
+from httpx import HTTPError
+from joserfc.errors import JoseError
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -23,6 +28,11 @@ hasher = PasswordHasher()
 # Equal-cost verification even for an unknown email.
 dummy_hash = hasher.hash(secrets.token_urlsafe(32))
 COOKIE = "smartclipper_session"
+email_adapter = TypeAdapter(EmailStr)
+
+
+def auth_error(status, code, message, field=None):
+    return HTTPException(status, {"code": code, "message": message, "field": field})
 
 
 def digest(token):
@@ -62,6 +72,38 @@ def safe_return_path(path):
 
 def install_auth(app, settings, sessions):
     attempts = defaultdict(deque)
+
+    @app.exception_handler(RequestValidationError)
+    async def credential_validation(request, exc):
+        if request.url.path not in {"/api/v1/auth/signup", "/api/v1/auth/login"}:
+            return await request_validation_exception_handler(request, exc)
+        from fastapi.responses import JSONResponse
+
+        issue = exc.errors()[0]
+        field = str(issue["loc"][-1])
+        kind = issue["type"]
+        if field == "password":
+            if kind == "string_too_short":
+                minimum = 8 if request.url.path.endswith("signup") else 1
+                message = (
+                    "Password must be at least 8 characters long."
+                    if minimum == 8
+                    else "Enter your password."
+                )
+            elif kind == "string_too_long":
+                message = "Password must be no more than 128 characters long."
+            else:
+                message = "Enter your password."
+        elif field == "email":
+            message = "Enter a valid email address."
+        elif field == "name":
+            message = "Enter a name between 1 and 80 characters."
+        else:
+            message = "Check your email and password and try again."
+        return JSONResponse(
+            {"detail": {"code": "invalid_" + field, "message": message, "field": field}},
+            status_code=422,
+        )
 
     def throttle(request):
         key = request.client.host if request.client else "unknown"
@@ -174,11 +216,30 @@ def install_auth(app, settings, sessions):
             password_hash=hasher.hash(credentials.password),
         )
         with sessions() as db:
+            if db.scalar(select(User.id).where(User.email == user.email)):
+                raise auth_error(
+                    409,
+                    "email_registered",
+                    "An account with this email is already registered. Please sign in instead.",
+                    "email",
+                )
             db.add(user)
             try:
                 db.commit()
             except IntegrityError as exc:
-                raise HTTPException(409, "Unable to create account. Try signing in.") from exc
+                db.rollback()
+                if db.scalar(select(User.id).where(User.email == user.email)):
+                    raise auth_error(
+                        409,
+                        "email_registered",
+                        "An account with this email is already registered. Please sign in instead.",
+                        "email",
+                    ) from exc
+                raise auth_error(
+                    503,
+                    "unavailable",
+                    "Account creation is temporarily unavailable. Please try again.",
+                ) from exc
         return sign_in(user, response, guest_id)
 
     @app.post("/api/v1/auth/login")
@@ -192,9 +253,32 @@ def install_auth(app, settings, sessions):
                     credentials.password,
                 )
             except VerificationError as exc:
-                raise HTTPException(401, "Email or password is incorrect.") from exc
+                if not user or user.is_guest:
+                    raise auth_error(
+                        401,
+                        "email_not_registered",
+                        "No account is registered with this email. Create an account first.",
+                        "email",
+                    ) from exc
+                if not user.password_hash:
+                    linked = db.scalars(
+                        select(Identity.provider).where(Identity.user_id == user.id)
+                    ).all()
+                    methods = (
+                        " or ".join(p.title() for p in linked) or "your original sign-in provider"
+                    )
+                    raise auth_error(
+                        401,
+                        "provider_account",
+                        f"This account uses {methods}. "
+                        "Continue with that provider instead of a password.",
+                        "password",
+                    ) from exc
+                raise auth_error(
+                    401, "incorrect_password", "Incorrect password. Please try again.", "password"
+                ) from exc
             if not user or not user.password_hash:
-                raise HTTPException(401, "Email or password is incorrect.")
+                raise auth_error(401, "incorrect_credentials", "Email or password is incorrect.")
         return sign_in(user, response, current_guest(request))
 
     @app.post("/api/v1/auth/logout")
@@ -251,24 +335,43 @@ def install_auth(app, settings, sessions):
             status_code=303,
         )
 
+    def oauth_origin(request):
+        origin = f"{request.url.scheme}://{request.url.netloc}"
+        return origin if origin in settings.allowed_origins else settings.public_url.rstrip("/")
+
     @app.get("/api/v1/auth/{provider}/start")
     async def start(provider: str, request: Request, return_to: str = "/"):
-        if provider not in enabled:
-            raise HTTPException(503, "This sign-in provider has not been configured yet.")
-        throttle(request)
+        if provider not in {"google", "facebook"}:
+            raise HTTPException(404, "Unknown sign-in provider.")
+        request.session.clear()
         request.session["return_to"] = safe_return_path(return_to)
-        request.session["guest_claim"] = digest(request.cookies.get(COOKIE, ""))
-        origin = f"{request.url.scheme}://{request.url.netloc}"
-        origin = origin if origin in settings.allowed_origins else settings.public_url
+        origin = oauth_origin(request)
         request.session["oauth_origin"] = origin
+        if provider not in enabled:
+            raise auth_error(
+                503,
+                "not_configured",
+                f"{provider.title()} sign-in is not configured yet. Please continue with email.",
+            )
+        throttle(request)
+        request.session["guest_claim"] = digest(request.cookies.get(COOKIE, ""))
         # Only explicitly allowed public origins; reject arbitrary Host-derived redirects.
         callback = f"{origin}/api/v1/auth/{provider}/callback"
-        return await oauth.create_client(provider).authorize_redirect(request, callback)
+        try:
+            return await oauth.create_client(provider).authorize_redirect(request, callback)
+        except (OAuthError, HTTPError, ValueError):
+            return oauth_failure(request, "provider_unavailable")
 
     @app.get("/api/v1/auth/{provider}/callback")
     async def callback(provider: str, request: Request):
+        if provider not in {"google", "facebook"}:
+            raise HTTPException(404, "Unknown sign-in provider.")
         if provider not in enabled:
-            raise HTTPException(503, "This sign-in provider is not configured.")
+            raise auth_error(
+                503,
+                "not_configured",
+                f"{provider.title()} sign-in is not configured yet. Please continue with email.",
+            )
         client = oauth.create_client(provider)
         try:
             # Authlib verifies single-use state; Google also verifies ID-token signature,
@@ -276,19 +379,36 @@ def install_auth(app, settings, sessions):
             token = await client.authorize_access_token(request)
             if provider == "google":
                 info = token.get("userinfo")
-                if not info or not info.get("email_verified"):
+                if not info or info.get("email_verified") is not True:
                     raise HTTPException(401, "A verified Google email is required.")
-                subject = str(info["sub"])
+                subject = info["sub"]
             else:
                 reply = await client.get("me?fields=id,name,email", token=token)
                 reply.raise_for_status()
                 info = reply.json()
-                subject = str(info["id"])
-            email = str(info.get("email", "")).lower()
-            if not email or len(email) > 254 or len(subject) > 255:
+                subject = info["id"]
+            email = str(email_adapter.validate_python(info.get("email", ""))).lower()
+            if not isinstance(subject, str) or not subject.strip() or len(subject) > 255:
+                return oauth_failure(request, "provider_response")
+            if not email or len(email) > 254:
                 raise HTTPException(401, "Your provider did not return a usable email.")
-        except (OAuthError, KeyError, ValueError):
-            return oauth_failure(request, "cancelled")
+        except ValidationError:
+            return oauth_failure(request, "provider_email")
+        except OAuthError as exc:
+            code = (
+                "cancelled"
+                if exc.error == "access_denied"
+                else "expired"
+                if exc.error == "mismatching_state"
+                else "provider_unavailable"
+            )
+            return oauth_failure(request, code)
+        except JoseError:
+            return oauth_failure(request, "expired")
+        except (KeyError, ValueError, TypeError):
+            return oauth_failure(request, "provider_response")
+        except HTTPError:
+            return oauth_failure(request, "provider_unavailable")
         except HTTPException:
             return oauth_failure(request, "provider_email")
         with sessions() as db:
@@ -300,6 +420,8 @@ def install_auth(app, settings, sessions):
             )
             if identity:
                 user = db.get(User, identity.user_id)
+                if not user or user.is_guest:
+                    return oauth_failure(request, "retry")
             else:
                 # Provider email collisions need explicit linking in a later account flow.
                 if db.scalar(select(User).where(User.email == email)):
@@ -307,14 +429,17 @@ def install_auth(app, settings, sessions):
                 user = User(
                     id=str(uuid4()), email=email, name=str(info.get("name", "Creator"))[:80]
                 )
-                db.add(user)
-                db.flush()
-                db.add(
-                    Identity(id=str(uuid4()), user_id=user.id, provider=provider, subject=subject)
-                )
                 try:
+                    db.add(user)
+                    db.flush()
+                    db.add(
+                        Identity(
+                            id=str(uuid4()), user_id=user.id, provider=provider, subject=subject
+                        )
+                    )
                     db.commit()
                 except IntegrityError:
+                    db.rollback()
                     return oauth_failure(request, "retry")
         guest_id = current_guest(request, oauth=True)
         destination = safe_return_path(request.session.get("return_to", "/"))
