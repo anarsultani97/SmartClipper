@@ -119,10 +119,12 @@ def export(job, settings, sessions, stage):
         has_audio=bool(project.has_audio),
     )
     with sessions() as db:
-        stored = db.get(Short, short.id)
         # A render of an old revision must never appear as the current export.
-        if stored.revision == options["revision"]:
-            stored.export_revision = options["revision"]
+        db.execute(
+            update(Short)
+            .where(Short.id == short.id, Short.revision == options["revision"])
+            .values(export_revision=options["revision"])
+        )
         db.commit()
     stage("Export ready")
 

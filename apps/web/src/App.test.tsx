@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
-import { App, Preferences, defaultOptions } from "./App";
+import { App, Preferences, defaultOptions, navigate } from "./App";
 import { ClipWorkspace } from "./ClipWorkspace";
 import * as api from "./api";
 vi.mock("./api");
@@ -68,6 +68,124 @@ beforeEach(() => {
   );
   vi.mocked(api.shortMedia).mockImplementation(
     (id, kind) => `/short/${id}/${kind}`,
+  );
+});
+it("does not restore a previous account's projects from a delayed poll", async () => {
+  let finish!: (value: api.Project[]) => void;
+  vi.mocked(api.listProjects).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  vi.mocked(api.logout).mockResolvedValue({});
+  vi.mocked(api.authenticate).mockResolvedValue({ ...user, id: "second" });
+  render(<App />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Sign out" }),
+  );
+  await act(async () => {
+    finish([{ ...project, filename: "private-first-account.mp4" }]);
+  });
+  await userEvent.type(
+    screen.getByLabelText("Email address"),
+    "second@example.com",
+  );
+  await userEvent.type(screen.getByLabelText("Password"), "test-password-123");
+  await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  await screen.findByRole("button", { name: "Choose video" });
+  expect(
+    screen.queryByText("private-first-account.mp4"),
+  ).not.toBeInTheDocument();
+});
+it("keeps a newly uploaded video when an older empty poll finishes", async () => {
+  let finish!: (value: api.Project[]) => void;
+  vi.mocked(api.listProjects).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  vi.mocked(api.uploadVideo).mockResolvedValue({
+    ...project,
+    status: "queued",
+  });
+  render(<App />);
+  await screen.findByRole("button", { name: "Choose video" });
+  await userEvent.upload(
+    screen.getByLabelText("Import video file"),
+    new File(["video"], "podcast.mp4", { type: "video/mp4" }),
+  );
+  await screen.findByText("Your video is in the queue.");
+  await act(async () => {
+    finish([]);
+  });
+  expect(screen.getByText("Your video is in the queue.")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Remove podcast.mp4 from queue" }),
+  ).toBeInTheDocument();
+});
+it("resets results selection when switching projects", async () => {
+  window.history.replaceState(null, "", "/projects/ready/shorts");
+  const second = { ...project, id: "second", filename: "second.mp4" };
+  vi.mocked(api.listProjects).mockResolvedValue([project, second]);
+  vi.mocked(api.shorts).mockImplementation(async (id) =>
+    id === "ready"
+      ? [short]
+      : [
+          {
+            ...short,
+            id: "s2",
+            project_id: "second",
+            title: "Second video story",
+          },
+        ],
+  );
+  render(<App />);
+  await screen.findByLabelText("Short title");
+  await act(async () => {
+    navigate("/projects/second/shorts");
+  });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Short title")).toHaveValue(
+      "Second video story",
+    ),
+  );
+  expect(
+    screen.queryByText("A short story starts with your video."),
+  ).not.toBeInTheDocument();
+});
+it("ignores results that finish after leaving their project", async () => {
+  window.history.replaceState(null, "", "/projects/ready/shorts");
+  let finish!: (value: api.Short[]) => void;
+  const pending = new Promise<api.Short[]>((resolve) => {
+    finish = resolve;
+  });
+  vi.mocked(api.listProjects).mockResolvedValue([
+    project,
+    { ...project, id: "second" },
+  ]);
+  vi.mocked(api.shorts).mockImplementation((id) =>
+    id === "ready"
+      ? pending
+      : Promise.resolve([
+          {
+            ...short,
+            id: "s2",
+            project_id: "second",
+            title: "Second video story",
+          },
+        ]),
+  );
+  render(<App />);
+  await waitFor(() => expect(api.shorts).toHaveBeenCalledWith("ready"));
+  await act(async () => {
+    navigate("/projects/second/shorts");
+  });
+  await screen.findByLabelText("Short title");
+  await act(async () => {
+    finish([short]);
+  });
+  expect(screen.getByLabelText("Short title")).toHaveValue(
+    "Second video story",
   );
 });
 it("shows only the guided direction even with historical review URLs", async () => {

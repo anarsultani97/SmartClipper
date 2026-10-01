@@ -420,14 +420,21 @@ export function ThumbnailEditor({
     }
   }
   useEffect(() => {
+    let active = true;
     api
       .shorts(project.id)
       .then((items) => {
+        if (!active) return;
         const found = items.find((s) => s.id === shortId);
         if (found) setDraft(found);
         else onError(new Error("Thumbnail editor not found."));
       })
-      .catch(onError);
+      .catch((error) => {
+        if (active) onError(error);
+      });
+    return () => {
+      active = false;
+    };
   }, [project.id, shortId, onError]);
   async function download() {
     if (!draft) return;

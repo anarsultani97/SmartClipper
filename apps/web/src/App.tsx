@@ -155,6 +155,8 @@ export function App() {
   const [deletingId, setDeletingId] = useState("");
   const [libraryLoaded, setLibraryLoaded] = useState(false);
   const removedIds = useRef(new Set<string>());
+  const accountEpoch = useRef(0);
+  const refreshSequence = useRef(0);
   const highlightRef = useRef<HTMLDivElement>(null);
   const abort = useRef<AbortController | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -180,13 +182,18 @@ export function App() {
   }, []);
   const reportError = useCallback((e: unknown) => setError(message(e)), []);
   const refresh = useCallback(async () => {
+    const epoch = accountEpoch.current;
+    const sequence = ++refreshSequence.current;
+    const current = () =>
+      epoch === accountEpoch.current && sequence === refreshSequence.current;
     try {
       const data = await api.listProjects();
-      setProjects(data.filter((p) => !removedIds.current.has(p.id)));
+      if (current())
+        setProjects(data.filter((p) => !removedIds.current.has(p.id)));
     } catch (e) {
-      setError(message(e));
+      if (current()) setError(message(e));
     } finally {
-      setLibraryLoaded(true);
+      if (current()) setLibraryLoaded(true);
     }
   }, []);
   useEffect(() => {
@@ -217,8 +224,17 @@ export function App() {
     setProgress(0);
     setUploadingName(file.name);
     abort.current = new AbortController();
+    const epoch = accountEpoch.current;
     try {
-      const p = await api.uploadVideo(file, setProgress, abort.current.signal);
+      const p = await api.uploadVideo(
+        file,
+        (value) => {
+          if (epoch === accountEpoch.current) setProgress(value);
+        },
+        abort.current.signal,
+      );
+      if (epoch !== accountEpoch.current) return;
+      ++refreshSequence.current;
       setProjects((old) => [p, ...old.filter((v) => v.id !== p.id)]);
       navigate(`/projects/${p.id}`);
       setHighlightedProject(p.id);
@@ -226,10 +242,12 @@ export function App() {
         "Video uploaded! Follow its preparation in Recent videos on the left (above on mobile).",
       );
     } catch (e) {
-      setError(message(e));
+      if (epoch === accountEpoch.current) setError(message(e));
     } finally {
-      setProgress(null);
-      if (input.current) input.current.value = "";
+      if (epoch === accountEpoch.current) {
+        setProgress(null);
+        if (input.current) input.current.value = "";
+      }
     }
   }
   const selectedId = path.match(/^\/projects\/([^/?]+)/)?.[1];
@@ -243,17 +261,21 @@ export function App() {
   ];
   async function removeVideo(p: api.Project) {
     setDeletingId(p.id);
+    const epoch = accountEpoch.current;
     try {
       await api.removeQueuedVideo(p.id);
+      if (epoch !== accountEpoch.current) return;
       removedIds.current.add(p.id);
       setProjects((old) => old.filter((video) => video.id !== p.id));
       if (selectedId === p.id) navigate("/");
       setNotice(`${p.filename} was removed from the queue.`);
     } catch (e) {
-      reportError(e);
-      await refresh();
+      if (epoch === accountEpoch.current) {
+        reportError(e);
+        await refresh();
+      }
     } finally {
-      setDeletingId("");
+      if (epoch === accountEpoch.current) setDeletingId("");
     }
   }
   const results = !!selected && path.includes("/shorts");
@@ -271,6 +293,7 @@ export function App() {
     return (
       <AuthView
         onLogin={(u) => {
+          ++accountEpoch.current;
           api.setCsrf(u.csrf);
           setUser(u);
         }}
@@ -388,6 +411,11 @@ export function App() {
             onClick={async () => {
               try {
                 await api.logout();
+                ++accountEpoch.current;
+                abort.current?.abort();
+                setProgress(null);
+                setDeletingId("");
+                setHighlightedProject("");
                 api.setCsrf("");
                 setUser(null);
                 setProjects([]);
@@ -480,15 +508,21 @@ export function App() {
             results ? (
               thumbId ? (
                 <ThumbnailEditor
+                  key={`${selected.id}:${thumbId}`}
                   project={selected}
                   shortId={thumbId}
                   onError={reportError}
                 />
               ) : (
-                <Results project={selected} onError={reportError} />
+                <Results
+                  key={selected.id}
+                  project={selected}
+                  onError={reportError}
+                />
               )
             ) : (
               <SourceWorkspace
+                key={selected.id}
                 project={selected}
                 options={options}
                 setOptions={setOptions}
@@ -880,23 +914,34 @@ function Results({
   const [shorts, setShorts] = useState<api.Short[]>([]);
   const [jobs, setJobs] = useState<api.Job[]>([]);
   const [selected, setSelected] = useState("");
+  const loadSequence = useRef(0);
+  const active = useRef(false);
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     try {
       const [s, j] = await Promise.all([
         api.shorts(project.id),
         api.jobs(project.id),
       ]);
+      if (!active.current || sequence !== loadSequence.current) return;
       setShorts(s);
       setJobs(j);
-      setSelected((old) => old || s[0]?.id || "");
+      setSelected((old) =>
+        s.some((item) => item.id === old) ? old : s[0]?.id || "",
+      );
     } catch (e) {
-      onError(e);
+      if (active.current && sequence === loadSequence.current) onError(e);
     }
   }, [project.id, onError]);
   useEffect(() => {
+    active.current = true;
     void load();
     const timer = window.setInterval(load, 3000);
-    return () => window.clearInterval(timer);
+    return () => {
+      active.current = false;
+      ++loadSequence.current;
+      window.clearInterval(timer);
+    };
   }, [load]);
   const current = shorts.find((s) => s.id === selected);
   const generating = jobs.find(
@@ -983,9 +1028,11 @@ function Results({
           key={current.id}
           short={current}
           jobs={jobs}
-          onSaved={(saved) =>
-            setShorts((old) => old.map((s) => (s.id === saved.id ? saved : s)))
-          }
+          onSaved={(saved) => {
+            if (!active.current) return;
+            ++loadSequence.current;
+            setShorts((old) => old.map((s) => (s.id === saved.id ? saved : s)));
+          }}
           refresh={load}
           onError={onError}
         />
