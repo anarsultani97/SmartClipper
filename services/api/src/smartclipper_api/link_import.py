@@ -95,7 +95,12 @@ def restrict_network():
 
 
 def restrict_downloaders():
+    import yt_dlp.downloader as downloaders
+    from yt_dlp.downloader.dash import DashSegmentsFD
     from yt_dlp.downloader.external import ExternalFD, FFmpegFD
+    from yt_dlp.downloader.hls import HlsFD
+    from yt_dlp.downloader.http import HttpFD
+    from yt_dlp.downloader.rtmp import RtmpFD
 
     def blocked(*args, **kwargs):
         raise ValueError("This format needs an external downloader. Upload an MP4 instead.")
@@ -106,6 +111,30 @@ def restrict_downloaders():
     ExternalFD._call_downloader = blocked
     FFmpegFD.real_download = blocked
     FFmpegFD._call_downloader = blocked
+    RtmpFD.real_download = blocked
+    choose = downloaders._get_suitable_downloader
+    protocols = {
+        "http",
+        "https",
+        "m3u8",
+        "m3u8_native",
+        "http_dash_segments",
+        "http_dash_segments_generator",
+        "m3u8_frag_urls",
+        "dash_frag_urls",
+    }
+
+    def guarded_choice(info, protocol, params, default):
+        if protocol not in protocols:
+            return blocked()
+        downloader = choose(info, protocol, params, default)
+        if downloader not in {None, HttpFD, HlsFD, DashSegmentsFD}:
+            return blocked()
+        return downloader
+
+    # All imported get_suitable_downloader aliases resolve this module's helper.
+    # Unknown protocols/classes fail closed instead of acquiring a new executable.
+    downloaders._get_suitable_downloader = guarded_choice
 
 
 def main():
