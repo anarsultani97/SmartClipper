@@ -3,7 +3,7 @@ import subprocess
 import pytest
 from smartclipper_api.database import Project
 from smartclipper_api.schemas import validate_metadata
-from smartclipper_api.worker import process_one
+from smartclipper_api.worker import ImportCancelled, process_one, run_media
 
 
 def metadata(duration="90", audio=True):
@@ -76,3 +76,39 @@ def test_worker_records_failures(app, error, expected):
         project = session.get(Project, "test")
         assert project.status == "failed"
         assert expected in project.error
+
+
+@pytest.mark.parametrize("fails", [True, False])
+def test_removed_preparing_video_cannot_resurrect_after_success_or_failure(app, client, fails):
+    project_id = client.post("/api/v1/projects?filename=cancel.mp4", content=b"data").json()["id"]
+
+    def processor(folder, settings):
+        assert client.delete(f"/api/v1/projects/{project_id}").status_code == 202
+        if fails:
+            raise ValueError("decode failed after cancel")
+        return validate_metadata(metadata(), 1800)
+
+    assert process_one(app.state.settings, app.state.sessions, processor)
+    with app.state.sessions() as db:
+        assert db.get(Project, project_id).status == "deleted"
+    assert not (app.state.settings.data_dir / project_id).exists()
+    assert client.get("/api/v1/projects").json() == []
+
+
+def test_native_process_is_killed_after_cancellation():
+    import sys
+    import time
+
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls >= 3
+
+    started = time.monotonic()
+    with pytest.raises(ImportCancelled):
+        run_media(
+            [sys.executable, "-c", "import time; time.sleep(10)"], timeout=15, cancelled=cancelled
+        )
+    assert time.monotonic() - started < 5

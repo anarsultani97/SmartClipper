@@ -1,4 +1,4 @@
-name: Web foundation
+name: SmartClipper beta checks
 on: [push, pull_request]
 permissions:
   contents: read
@@ -22,7 +22,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run pytest
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-cjk
       - run: uv run pytest services/api/tests/test_real_media.py
       - run: uv run alembic upgrade head
       - run: npx playwright install --with-deps chromium

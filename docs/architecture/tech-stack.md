@@ -1,6 +1,6 @@
 # SmartClipper web technology stack
 
-Date: 2026-09-30. Status: selected direction; versions are pinned in implementation lockfiles.
+Date: 2026-10-01. Status: guided beta implemented; versions are pinned in lockfiles. Python 3.12+ is the supported baseline.
 
 ## Application layers
 
@@ -9,22 +9,24 @@ Date: 2026-09-30. Status: selected direction; versions are pinned in implementat
 | Browser | React, TypeScript, Vite; semantic HTML and CSS | Upload, library, video review, timeline, downloads |
 | Client state | React state initially; TanStack Query when needed | Local editing and server state without duplicating persisted state |
 | API | Python, FastAPI, Pydantic | Validated versioned REST and OpenAPI contracts |
+| Authentication | Authlib, Argon2, opaque SQL sessions | Google/Facebook adapters, email login, CSRF and ownership |
 | Database | SQLAlchemy 2, Alembic; PostgreSQL for hosted app | Projects, ownership, media metadata, revisions, jobs |
 | Local review database | SQLite | Zero-service developer setup; same ORM and explicit migrations |
 | Processing | Independent Python worker; Celery/Redis for hosted pipeline | Durable asynchronous CPU/GPU jobs |
 | Media | FFmpeg, ffprobe | Probe, extraction, proxy, quality filters, rendering |
 | Transcription | faster-whisper behind an adapter | CPU development and optional Linux GPU workers |
-| Quality | FFmpeg filters; PySceneDetect adapter | Black/blur/corruption evidence and scene boundaries |
+| Quality | FFmpeg sparse decoding, NumPy/Pillow | Brightness/blur checks and cover selection; fuller scene analysis later |
 | AI | Provider-independent structured context adapter | Topic mapping and candidate selection |
 | Media storage | Private S3-compatible object storage when hosted | Direct multipart uploads, signed previews/downloads |
 | Local review storage | Ignored local data directory | Small-file import and playback during initial development |
 | Tooling | npm workspace and lockfile initially; uv for Python | Reproducible dependencies |
 | Tests | pytest, Vitest, React Testing Library, Playwright | Domain, API, UI, browser journeys |
+| Activity | Indexed database aggregates, native React/CSS | Personal/operator dashboards on demand; no tracking SDK |
 | Deployment | Linux containers, static CDN/reverse proxy | Independent API and worker scaling |
 
 ## Initial implementation boundary
 
-The first review build focuses on a working UI, video upload/validation, persisted projects, and playback/timeline. It can use SQLite and local disk while the hosted architecture is developed. Bind to localhost; it is not a public multi-user deployment. Explicitly document any deferred authentication, queues, object storage, and AI. Never present sample clip cards as generated results.
+The guided beta implements account-owned imports, local recognition/translation, transcript-based suggestions, quality checks, vertical exports, covers and aggregate activity. SQLite/local disk remain the developer setup. Bind to localhost; production hosting is a separate milestone. See [the current generation decision](0003-short-generation.md) for working boundaries and deferred release gates.
 
 The hosted release migrates to PostgreSQL, private object storage, authenticated ownership, durable workers, quotas, and retention. ORM portability alone does not replace testing PostgreSQL migrations and transaction semantics. Do not deploy the local review build publicly.
 

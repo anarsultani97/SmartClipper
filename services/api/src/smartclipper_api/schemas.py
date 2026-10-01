@@ -1,6 +1,7 @@
 import math
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class ProjectView(BaseModel):
@@ -17,6 +18,98 @@ class ProjectView(BaseModel):
     start_ms: int
     end_ms: int
     revision: int
+    detected_language: str | None = None
+    transcript_language: str | None = None
+
+
+LANGUAGES = {"en", "es", "zh", "hi", "ar", "pt", "bn", "ru", "ja", "fr", "tr"}
+
+
+class Credentials(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=10, max_length=128)
+    name: str = Field(default="Creator", min_length=1, max_length=80)
+
+
+class GenerateOptions(BaseModel):
+    language: str = "auto"
+    platform: Literal["youtube", "tiktok", "instagram", "facebook"] = "youtube"
+    duration_seconds: int = Field(default=45, ge=15, le=180)
+    count: int = Field(default=5, ge=1, le=5)
+    english_subtitles: bool = False
+
+    @model_validator(mode="after")
+    def supported_language(self):
+        if self.language != "auto" and self.language not in LANGUAGES:
+            raise ValueError("Choose a supported language or auto-detect.")
+        return self
+
+
+class TranscriptUpload(BaseModel):
+    language: str
+    srt: str = Field(min_length=1, max_length=200000)
+
+    @model_validator(mode="after")
+    def supported_language(self):
+        if self.language not in LANGUAGES:
+            raise ValueError("Choose the language of your transcript.")
+        return self
+
+
+class ShortEdit(BaseModel):
+    revision: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=100)
+    subtitles: bool = True
+    subtitle_language: Literal["original", "en"] = "original"
+    music: Literal["none", "bright", "calm", "pulse"] = "none"
+    thumbnail: int = Field(default=0, ge=0, le=3)
+    thumbnail_style: Literal["bold", "clean", "minimal"] = "bold"
+    thumbnail_text: str = Field(default="", max_length=100)
+
+
+class Caption(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+class ThumbnailView(BaseModel):
+    index: int
+    time_seconds: float
+    sharpness: float | None = None
+    brightness: float | None = None
+
+
+class ShortView(BaseModel):
+    id: str
+    project_id: str
+    job_id: str
+    title: str
+    summary: list[str]
+    start_ms: int
+    end_ms: int
+    thumbnails: list[ThumbnailView]
+    thumbnail: int
+    thumbnail_style: str
+    thumbnail_text: str
+    subtitles: bool
+    subtitle_language: str
+    music: str
+    revision: int
+    export_revision: int | None
+    quality_note: str
+    english_available: bool
+    transcript: list[Caption]
+
+
+class JobView(BaseModel):
+    id: str
+    project_id: str
+    kind: str
+    status: str
+    stage: str
+    error: str | None
+    options: dict
 
 
 class ClipSelection(BaseModel):

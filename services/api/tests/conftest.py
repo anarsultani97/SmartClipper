@@ -20,4 +20,13 @@ def app(tmp_path):
 @pytest.fixture
 def client(app):
     with TestClient(app) as client:
+        signup = client.post(
+            "/api/v1/auth/signup",
+            json={
+                "email": "creator@example.com",
+                "password": "test-password-123",
+                "name": "Creator",
+            },
+        )
+        client.headers["X-CSRF-Token"] = signup.json()["csrf"]
         yield client

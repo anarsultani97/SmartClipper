@@ -1,7 +1,7 @@
 # SmartClipper: Web Application Workflow and Implementation Plan
 
-Date: 2026-09-30
-Status: Proposed implementation plan; supersedes the desktop workflow.
+Date: 2026-10-01
+Status: Web roadmap with a working guided beta; supersedes the desktop workflow.
 Related: [web stack decision](0002-web-stack.md), [technology stack](tech-stack.md), [team workflow](../development/team-workflow.md).
 
 ## 1. Product scope
@@ -12,7 +12,19 @@ Start with speech-led interviews, podcasts, tutorials, and presentations. Sugges
 
 Proposed defaults: five continuous clips, usually 30-60 seconds, configurable by the user. Keep the source immutable. Trimming, captions, crop, and fit are editable metadata until export.
 
-This specifies the target implementation and validation. A local UI/import/database review slice now exists; see [local development](../development/local-development.md). Hosted services, transcription, AI selection, and short rendering remain planned. The desktop scaffold is historical.
+This specifies the target implementation and validation. The current beta implements the guided UI, accounts/ownership, import/database/worker, timed SRT/local transcription, English translation, quality sampling, up to five suggestions, vertical caption/music exports and thumbnail editing. Local selection is transcript scoring; optional hosted semantic ranking requires configuration. See [the current architecture](0003-short-generation.md) and [local development](../development/local-development.md). Hosted services and advanced editor work remain planned. The desktop scaffold is historical.
+
+### Current milestones, one by one
+
+1. **Guided foundation — implemented.** One UI direction, large preview and timeline, persisted account-owned uploads, MP3 and source review.
+2. **Generation beta — implemented.** Eleven language selections plus auto-detection, timed SRT or local recognition, optional English captions, configurable platform/length/count and a separate results page.
+3. **Review and export — implemented.** Three context sentences, caption toggles, titles, original music beds, up to three clear covers, a cover editor/custom upload/frame capture, and asynchronous 720×1280 downloads.
+4. **Usage visibility — implemented.** Personal and allowlisted operator aggregate dashboards, requested on demand. Playback/download/click analytics are deliberately not collected.
+5. **Quality and editor acceptance — next.** Native-speaker tests for each language, real OAuth consent with configured apps, VFR/rotation/audio-offset fixtures, stronger semantic ranking evaluation, better automatic framing and original-source-quality exports.
+6. **Hosted beta — next.** PostgreSQL transaction/migration acceptance, private object storage, resumable upload, distributed worker leases, quotas, retention, account recovery/verification and privacy controls.
+7. **Social integrations — later.** Explicit user-authorized publishing, platform metadata/cover rules and licensed trend catalog access. No embedded chart hits or fabricated trend rankings.
+
+The detailed sections below describe the eventual hosted target. Their object storage, alignment, crop, cancellation and advanced editor features are not claims about the current local beta.
 
 ## 2. User workflow, step by step
 

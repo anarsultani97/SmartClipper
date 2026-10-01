@@ -1,11 +1,11 @@
-export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024 * 1024;
 export function validateVideo(
   file: Pick<File, "name" | "size">,
 ): string | null {
   if (!file.name.toLowerCase().endsWith(".mp4")) return "Choose an MP4 video.";
   if (!file.size) return "This video is empty.";
   if (file.size > MAX_UPLOAD_BYTES)
-    return "Choose a video smaller than 200 MB.";
+    return "Choose a video no larger than 3 GB.";
   return null;
 }
 export function formatTime(seconds: number): string {

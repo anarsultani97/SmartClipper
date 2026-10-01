@@ -1,16 +1,22 @@
-import shutil
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import select, update
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .auth import install_auth, require_user
 from .config import Settings
-from .database import Project, make_database
+from .database import Project, User, make_database
 from .schemas import ClipSelection, ProjectView
+from .storage import remove_project_files
+
+CurrentUser = Annotated[User, Depends(require_user)]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -23,11 +29,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         engine.dispose()
 
-    app = FastAPI(title="SmartClipper local review API", version="0.1.0", lifespan=lifespan)
+    if settings.secure_cookies and len(settings.session_secret) < 32:
+        raise ValueError(
+            "Configure a session secret of at least 32 characters for HTTPS deployments."
+        )
+    app = FastAPI(title="SmartClipper API", version="0.2.0", lifespan=lifespan)
     app.state.settings, app.state.sessions = settings, sessions
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
+        SessionMiddleware,
+        secret_key=settings.session_secret or secrets.token_urlsafe(32),
+        session_cookie="smartclipper_oauth",
+        max_age=600,
+        same_site="lax",
+        https_only=settings.secure_cookies,
     )
+    install_auth(app, settings, sessions)
 
     @app.middleware("http")
     async def origin_guard(request: Request, call_next):
@@ -43,9 +60,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse({"detail": "Origin is not allowed."}, status_code=403)
         return await call_next(request)
 
-    def get_project(session, project_id):
+    def get_project(session, project_id, user):
         project = session.get(Project, project_id)
-        if project is None:
+        if project is None or project.owner_id != user.id or project.status == "deleted":
             raise HTTPException(404, "Project not found.")
         return project
 
@@ -53,22 +70,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health():
         return {
             "status": "ok",
-            "mode": "local-review",
+            "mode": "owned-workspaces",
             "max_upload_bytes": settings.max_upload_bytes,
         }
 
     @app.get("/api/v1/projects", response_model=list[ProjectView])
-    def list_projects():
+    def list_projects(user: CurrentUser):
         with sessions() as session:
-            return session.scalars(select(Project).order_by(Project.created_at.desc())).all()
+            return session.scalars(
+                select(Project)
+                .where(Project.owner_id == user.id, Project.status != "deleted")
+                .order_by(Project.created_at.desc())
+            ).all()
 
     @app.get("/api/v1/projects/{project_id}", response_model=ProjectView)
-    def project_detail(project_id: str):
+    def project_detail(project_id: str, user: CurrentUser):
         with sessions() as session:
-            return get_project(session, project_id)
+            return get_project(session, project_id, user)
 
     @app.post("/api/v1/projects", status_code=202, response_model=ProjectView)
-    async def upload(request: Request, filename: str):
+    async def upload(request: Request, filename: str, user: CurrentUser):
         filename = filename.replace("\\", "/").split("/")[-1]
         if not filename.lower().endswith(".mp4") or len(filename) > 255:
             raise HTTPException(415, "Choose an MP4 video.")
@@ -93,20 +114,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(400, "Video is empty.")
             with sessions() as session:
                 project = Project(
-                    id=project_id, filename=filename, size_bytes=size, status="queued"
+                    id=project_id,
+                    filename=filename,
+                    size_bytes=size,
+                    status="queued",
+                    owner_id=user.id,
                 )
                 session.add(project)
                 session.commit()
                 session.refresh(project)
                 return project
         except BaseException:
-            shutil.rmtree(folder, ignore_errors=True)
+            remove_project_files(settings, project_id)
             raise
 
-    @app.patch("/api/v1/projects/{project_id}/selection", response_model=ProjectView)
-    def selection(project_id: str, edit: ClipSelection):
+    @app.delete("/api/v1/projects/{project_id}", status_code=202)
+    def remove_queued(project_id: str, user: CurrentUser):
         with sessions() as session:
-            project = get_project(session, project_id)
+            project = get_project(session, project_id, user)
+            previous = project.status
+            changed = session.execute(
+                update(Project)
+                .where(
+                    Project.id == project_id,
+                    Project.owner_id == user.id,
+                    Project.status.in_(["queued", "processing"]),
+                )
+                .values(status="deleted", error=None)
+            )
+            if changed.rowcount != 1:
+                raise HTTPException(
+                    409, "This video has already finished preparing. Refresh the queue."
+                )
+            session.commit()
+        # The worker observes the tombstone, stops its native process and cleans up.
+        # Waiting imports have no native process and can be cleaned immediately.
+        if previous == "queued":
+            remove_project_files(settings, project_id)
+        return {"status": "removed", "id": project_id}
+
+    @app.patch("/api/v1/projects/{project_id}/selection", response_model=ProjectView)
+    def selection(project_id: str, edit: ClipSelection, user: CurrentUser):
+        with sessions() as session:
+            project = get_project(session, project_id, user)
             if project.status != "ready":
                 raise HTTPException(409, "Wait for video preparation to finish.")
             if edit.end_ms > int((project.duration_seconds or 0) * 1000):
@@ -122,12 +172,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             session.commit()
             session.expire_all()
-            return get_project(session, project_id)
+            return get_project(session, project_id, user)
 
     @app.post("/api/v1/projects/{project_id}/retry", response_model=ProjectView)
-    def retry(project_id: str):
+    def retry(project_id: str, user: CurrentUser):
         with sessions() as session:
-            project = get_project(session, project_id)
+            project = get_project(session, project_id, user)
             if project.status != "failed":
                 raise HTTPException(409, "Only failed imports can be retried.")
             project.status, project.error = "queued", None
@@ -135,7 +185,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return project
 
     @app.get("/api/v1/projects/{project_id}/media/{kind}")
-    def media(project_id: str, kind: str):
+    def media(project_id: str, kind: str, user: CurrentUser):
         names = {
             "preview": ("preview.mp4", "video/mp4"),
             "thumbnail": ("thumbnail.jpg", "image/jpeg"),
@@ -144,7 +194,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if kind not in names:
             raise HTTPException(404, "Media not found.")
         with sessions() as session:
-            project = get_project(session, project_id)
+            project = get_project(session, project_id, user)
             if project.status != "ready":
                 raise HTTPException(409, "Video is not ready.")
             name, content_type = names[kind]
@@ -157,6 +207,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 filename=f"{Path(project.filename).stem}.mp3" if kind == "audio" else None,
             )
 
+    from .short_routes import install_short_routes
+
+    install_short_routes(app, settings, sessions, get_project)
+    from .analytics import install_analytics
+
+    install_analytics(app, settings, sessions)
     return app
 
 

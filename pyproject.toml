@@ -1,8 +1,23 @@
 [project]
 name = "smartclipper-api"
 version = "0.1.0"
-requires-python = ">=3.10"
-dependencies = ["fastapi", "uvicorn", "sqlalchemy>=2,<3", "alembic", "pydantic-settings"]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy>=2,<3",
+    "alembic",
+    "pydantic-settings",
+    "authlib>=1.8.0",
+    "itsdangerous>=2.2.0",
+    "argon2-cffi>=25.1.0",
+    "email-validator>=2.3.0",
+    "faster-whisper>=1.2.1",
+    "pillow>=12.3.0",
+    "numpy>=2.2.6",
+    "httpx>=0.28.1",
+    "filelock>=4.0.7",
+]
 
 [dependency-groups]
 dev = [
