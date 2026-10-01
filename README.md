@@ -1,4 +1,6 @@
-# SmartClipper
+# Clivvy
+
+Clivvy is the working product name for SmartClipper. Repository, package and environment names retain `SmartClipper` for compatibility. Naming research found existing Clipp video products; Clivvy is provisional and domain/trademark availability has not been verified.
 
 A web application for turning videos into up to five transcript-based shorts, with captions, clear cover choices and MP3 extraction. Users import, review, customize and download. Social publishing comes later.
 

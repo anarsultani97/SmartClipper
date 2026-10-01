@@ -13,7 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .auth import install_auth, require_user
 from .config import Settings
 from .database import Job, Project, Short, User, make_database
-from .schemas import ClipSelection, ProjectView
+from .schemas import ClipSelection, LinkImport, ProjectView
 from .storage import remove_project_files
 
 CurrentUser = Annotated[User, Depends(require_user)]
@@ -33,7 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         raise ValueError(
             "Configure a session secret of at least 32 characters for HTTPS deployments."
         )
-    app = FastAPI(title="SmartClipper API", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="Clivvy API", version="0.2.0", lifespan=lifespan)
     app.state.settings, app.state.sessions = settings, sessions
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.add_middleware(
@@ -65,6 +65,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if project is None or project.owner_id != user.id or project.status == "deleted":
             raise HTTPException(404, "Project not found.")
         return project
+
+    def link_owner_and_quota(db, user):
+        claimed_by = db.scalar(
+            update(User)
+            .where(User.id == user.id)
+            .values(claimed_by=User.claimed_by)
+            .returning(User.claimed_by)
+        )
+        owner_id = claimed_by or user.id
+        if owner_id != user.id:
+            db.execute(update(User).where(User.id == owner_id).values(claimed_by=User.claimed_by))
+        count = db.scalar(
+            select(func.count(Project.id)).where(
+                Project.owner_id == owner_id,
+                Project.source_url.is_not(None),
+                Project.status.in_(["queued", "processing"]),
+            )
+        )
+        if count >= settings.max_link_imports:
+            raise HTTPException(429, "Wait for a linked video to finish before adding another.")
+        return owner_id
 
     @app.get("/api/v1/health")
     def health():
@@ -98,6 +119,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def project_detail(project_id: str, user: CurrentUser):
         with sessions() as session:
             return get_project(session, project_id, user)
+
+    @app.post("/api/v1/projects/link", status_code=202, response_model=ProjectView)
+    def import_link(payload: LinkImport, user: CurrentUser):
+        from .link_import import video_link
+
+        try:
+            url = video_link(payload.url)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        with sessions() as db:
+            # Serialize quota and guest/account transfer against the existing owner row.
+            owner_id = link_owner_and_quota(db, user)
+            project = Project(
+                id=str(uuid4()),
+                owner_id=owner_id,
+                filename="Linked video.mp4",
+                source_url=url,
+                size_bytes=0,
+                status="queued",
+                stage="Waiting to import link",
+            )
+            db.add(project)
+            db.commit()
+            return project
 
     @app.post("/api/v1/projects", status_code=202, response_model=ProjectView)
     async def upload(request: Request, filename: str, user: CurrentUser):
@@ -222,6 +267,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             project = get_project(session, project_id, user)
             if project.status != "failed":
                 raise HTTPException(409, "Only failed imports can be retried.")
+            if project.source_url:
+                link_owner_and_quota(session, user)
             project.status, project.error = "queued", None
             project.progress, project.stage = 0, "Waiting for worker"
             session.commit()

@@ -30,6 +30,8 @@ The guided beta implements account-owned imports, local recognition/translation,
 
 The local editor now supports reversible source/short trim and picture/audio adjustments, vertical or horizontal exports, and a timeline-ordered shorts feed. See [ADR 0005](0005-reversible-video-editor.md) for media clocks, preview costs and the editor boundary.
 
+Clivvy is the current working product name. Public social-video links use an isolated yt-dlp subprocess; the sound studio uses native browser recording, immutable owned WAV assets and FFmpeg mixing. See [ADR 0006](0006-link-import-audio-studio.md) for bounds, music catalogs and provider integrations.
+
 The hosted release migrates to PostgreSQL, private object storage, authenticated ownership, durable workers, quotas, and retention. ORM portability alone does not replace testing PostgreSQL migrations and transaction semantics. Do not deploy the local review build publicly.
 
 ## Browser editor

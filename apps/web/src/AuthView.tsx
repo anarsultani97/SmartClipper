@@ -56,7 +56,7 @@ export function AuthView({
           <span className="brand-mark">
             <Scissors size={22} />
           </span>
-          SmartClipper<span className="beta">BETA</span>
+          Clivvy<span className="beta">BETA</span>
         </a>
         <div>
           <span className="eyebrow">BIG STORIES. LITTLE MOMENTS.</span>
@@ -88,7 +88,7 @@ export function AuthView({
         </div>
         <blockquote>
           “Keep the story. Skip the scrolling.”
-          <small>The SmartClipper editing philosophy</small>
+          <small>The Clivvy editing philosophy</small>
         </blockquote>
       </section>
       <section className="auth-form">

@@ -324,6 +324,115 @@ export function VideoEditor({
   );
 }
 
+type AudioTrack = {
+  src: string;
+  volume: number;
+  startAt: number;
+  offset: number;
+  loop: boolean;
+};
+function MixedAudioTrack({
+  track,
+  elapsed,
+  playing,
+  fade,
+}: {
+  track: AudioTrack;
+  elapsed: number;
+  playing: boolean;
+  fade: number;
+}) {
+  const player = useRef<HTMLAudioElement>(null);
+  const [error, setError] = useState("");
+  const sync = () => {
+    const audio = player.current;
+    if (!audio) return;
+    audio.volume = Math.max(0, Math.min(1, track.volume * fade));
+    if (
+      !audio.readyState ||
+      !Number.isFinite(audio.duration) ||
+      audio.duration <= 0
+    )
+      return;
+    const desired = track.offset + elapsed - track.startAt;
+    const active =
+      playing && desired >= 0 && (track.loop || desired < audio.duration);
+    const position = track.loop
+      ? Math.max(0, desired) % audio.duration
+      : Math.max(0, Math.min(desired, audio.duration));
+    if (Math.abs(audio.currentTime - position) > 0.15)
+      audio.currentTime = position;
+    if (active && audio.paused)
+      void audio.play().catch(() => {
+        if (player.current === audio)
+          setError(
+            "Added audio could not play. Press play again or reselect your track.",
+          );
+      });
+    if (!active && !audio.paused) audio.pause();
+  };
+  useEffect(sync, [
+    track.src,
+    track.volume,
+    track.startAt,
+    track.offset,
+    track.loop,
+    elapsed,
+    playing,
+    fade,
+  ]);
+  useEffect(() => {
+    const element = player.current;
+    return () => element?.pause();
+  }, []);
+  return (
+    <>
+      <audio
+        ref={player}
+        src={track.src}
+        loop={track.loop}
+        preload="metadata"
+        onLoadedMetadata={sync}
+        onError={() =>
+          setError(
+            "Selected audio is unavailable. Try uploading or selecting it again.",
+          )
+        }
+      />
+      {error && (
+        <p className="editor-validation" role="status">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+function MixedAudio({
+  tracks,
+  elapsed,
+  playing,
+  fade,
+}: {
+  tracks: AudioTrack[];
+  elapsed: number;
+  playing: boolean;
+  fade: number;
+}) {
+  return (
+    <>
+      {tracks.map((track) => (
+        <MixedAudioTrack
+          key={track.src}
+          track={track}
+          elapsed={elapsed}
+          playing={playing}
+          fade={fade}
+        />
+      ))}
+    </>
+  );
+}
+
 export function EditedVideoPlayer({
   src,
   poster,
@@ -332,6 +441,7 @@ export function EditedVideoPlayer({
   end,
   captions,
   label = "Video preview",
+  audioTracks,
 }: {
   src: string;
   poster?: string;
@@ -340,6 +450,13 @@ export function EditedVideoPlayer({
   end: number;
   captions?: (sourceTime: number) => ReactNode;
   label?: string;
+  audioTracks?: {
+    src: string;
+    volume: number;
+    startAt: number;
+    offset: number;
+    loop: boolean;
+  }[];
 }) {
   const video = useRef<HTMLVideoElement>(null),
     wrapper = useRef<HTMLDivElement>(null),
@@ -530,6 +647,14 @@ export function EditedVideoPlayer({
         <p role="alert" className="editor-validation">
           {error}
         </p>
+      )}
+      {audioTracks && (
+        <MixedAudio
+          tracks={audioTracks}
+          elapsed={elapsed}
+          playing={playing}
+          fade={Math.max(0, opacity)}
+        />
       )}
     </div>
   );
