@@ -58,7 +58,7 @@ def caption_groups(segments):
     return groups
 
 
-def caption_ass(segments, style="pop", position="lower"):
+def caption_ass(segments, style="pop", position="lower", width=720, height=1280):
     def stamp(t):
         cs = max(0, round(t * 100))
         hours, cs = divmod(cs, 360000)
@@ -70,7 +70,9 @@ def caption_ass(segments, style="pop", position="lower"):
         return re.sub(r"[{}\\<>\r\n]", "", text)
 
     highlight = "&H0076FFDC&" if style == "pop" else "&H0000DDFF&"
-    header = "[Script Info]\nScriptType: v4.00+\nPlayResX: 720\nPlayResY: 1280\nWrapStyle: 0\n"
+    header = (
+        f"[Script Info]\nScriptType: v4.00+\nPlayResX: {width}\nPlayResY: {height}\nWrapStyle: 0\n"
+    )
     header += (
         "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, "
@@ -79,7 +81,8 @@ def caption_ass(segments, style="pop", position="lower"):
     )
     header += (
         "Style: Default,Noto Sans,46,&H00FFFFFF,&H00FFFFFF,&H00202020,&H80000000,"
-        f"-1,0,0,0,100,100,0,0,1,3,1,{5 if position == 'middle' else 2},65,100,230,1\n"
+        f"-1,0,0,0,100,100,0,0,1,3,1,{5 if position == 'middle' else 2},"
+        f"{round(width * 0.09)},{round(width * 0.14)},{round(height * 0.18)},1\n"
     )
     header += (
         "[Events]\nFormat: Layer, Start, End, Style, Name, "

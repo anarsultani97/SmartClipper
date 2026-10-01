@@ -13,6 +13,7 @@ from .database import Job, Project, Short
 from .highlights import candidates, select_diverse, semantic_rank
 from .quality import clean_candidate, make_thumbnails, scan_quality
 from .rendering import render_short
+from .schemas import VideoEdits
 from .transcription import relative_segments, transcribe, transcription_profile
 
 
@@ -92,11 +93,23 @@ def generate(job, settings, sessions, stage):
             temporary.replace(english_cache)
     stage("Checking scenes and context", 60)
     samples = scan_quality(source, settings)
-    pool = [
-        c
-        for c in candidates(transcript, project.duration_seconds, options["duration_seconds"])
-        if clean_candidate(c, samples)
-    ]
+    selection_start = options.get("source_start_ms", 0) / 1000
+    selection_end = (options.get("source_end_ms") or round(project.duration_seconds * 1000)) / 1000
+    selected_transcript = relative_segments(transcript, selection_start, selection_end)
+    source_edits = VideoEdits.model_validate(options.get("source_edits") or {})
+    pool = []
+    for item in candidates(
+        selected_transcript,
+        selection_end - selection_start,
+        options["duration_seconds"] * source_edits.speed,
+    ):
+        candidate = {
+            **item,
+            "start": item["start"] + selection_start,
+            "end": item["end"] + selection_start,
+        }
+        if clean_candidate(candidate, samples):
+            pool.append(candidate)
     ranked, note = semantic_rank(pool, settings, options["platform"]) if pool else ([], "")
     chosen = select_diverse(ranked, options["count"])
     if not chosen:
@@ -142,6 +155,7 @@ def generate(job, settings, sessions, stage):
                 note
                 + " Quality sampled every two seconds. Review captions and framing before sharing."
             )[:500],
+            video_edits=VideoEdits.model_validate(options.get("source_edits") or {}).model_dump(),
         )
         output = short_folder(settings, short)
         short.thumbnails = make_thumbnails(
@@ -156,6 +170,7 @@ def generate(job, settings, sessions, stage):
             settings,
             has_audio=bool(project.has_audio),
             preview=True,
+            video_edits=short.video_edits,
             progress=lambda seconds: render_progress(
                 index, min(0.95, 0.15 + 0.8 * seconds / (item["end"] - item["start"]))
             ),
@@ -185,21 +200,36 @@ def export(job, settings, sessions, stage):
         short = db.get(Short, options["short_id"])
         project = db.get(Project, short.project_id)
     stage("Rendering your export", 5)
+    edits = VideoEdits.model_validate(options.get("video_edits") or {})
+    trim_start = edits.trim_start_ms / 1000
+    trim_end = (
+        edits.trim_end_ms
+        if edits.trim_end_ms is not None
+        else options["end_ms"] - options["start_ms"]
+    ) / 1000
+    captions = relative_segments(options["captions"], trim_start, trim_end)
+    for cue in captions:
+        cue["start"] /= edits.speed
+        cue["end"] /= edits.speed
+        for word in cue["words"]:
+            word["start"] /= edits.speed
+            word["end"] /= edits.speed
     folder = short_folder(settings, short) / "exports" / job.id
     render_short(
         settings.data_dir / project.id / "preview.mp4",
         folder,
-        options["start_ms"] / 1000,
-        options["end_ms"] / 1000,
+        options["start_ms"] / 1000 + trim_start,
+        options["start_ms"] / 1000 + trim_end,
         settings,
-        captions=options["captions"] if options["subtitles"] else None,
+        captions=captions if options["subtitles"] else None,
         music=options["music"],
         has_audio=bool(project.has_audio),
         caption_style=options.get("caption_style", "pop"),
         caption_position=options.get("caption_position", "lower"),
+        video_edits=edits.model_dump(),
         progress=lambda seconds: stage(
             "Rendering your export",
-            min(98, 5 + round(93 * seconds / ((options["end_ms"] - options["start_ms"]) / 1000))),
+            min(98, 5 + round(93 * seconds / ((trim_end - trim_start) / edits.speed))),
         ),
     )
     with sessions() as db:

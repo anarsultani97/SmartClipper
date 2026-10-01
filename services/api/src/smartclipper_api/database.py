@@ -48,6 +48,7 @@ class Project(Base):
     detected_language: Mapped[str | None] = mapped_column(String(12), nullable=True)
     transcript_language: Mapped[str | None] = mapped_column(String(12), nullable=True)
     transcription_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    video_edits: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
 
 
 class User(Base):
@@ -128,6 +129,7 @@ class Short(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     export_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quality_note: Mapped[str] = mapped_column(String(500), default="")
+    video_edits: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
 
 
 def make_database(url: str):

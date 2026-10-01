@@ -12,7 +12,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import install_auth, require_user
 from .config import Settings
-from .database import Project, Short, User, make_database
+from .database import Job, Project, Short, User, make_database
 from .schemas import ClipSelection, ProjectView
 from .storage import remove_project_files
 
@@ -183,10 +183,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(409, "Wait for video preparation to finish.")
             if edit.end_ms > int((project.duration_seconds or 0) * 1000):
                 raise HTTPException(422, "Selection exceeds the video duration.")
+            speed = (
+                edit.video_edits.speed
+                if edit.video_edits is not None
+                else project.video_edits.get("speed", 1)
+            )
+            if (edit.end_ms - edit.start_ms) / speed < 500:
+                raise HTTPException(422, "Keep at least half a second of playback.")
+            if session.scalar(
+                select(Job.id).where(
+                    Job.project_id == project_id, Job.status.in_(["queued", "processing"])
+                )
+            ):
+                raise HTTPException(
+                    409, "Wait for this video's current job to finish before editing."
+                )
+            values = dict(start_ms=edit.start_ms, end_ms=edit.end_ms, revision=edit.revision + 1)
+            if edit.video_edits is not None:
+                values["video_edits"] = edit.video_edits.model_dump(
+                    exclude={"trim_start_ms", "trim_end_ms"}
+                )
             changed = session.execute(
                 update(Project)
                 .where(Project.id == project_id, Project.revision == edit.revision)
-                .values(start_ms=edit.start_ms, end_ms=edit.end_ms, revision=edit.revision + 1)
+                .values(**values)
             )
             if changed.rowcount != 1:
                 raise HTTPException(

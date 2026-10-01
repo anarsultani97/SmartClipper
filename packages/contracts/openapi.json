@@ -1236,6 +1236,16 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Revision"
+          },
+          "video_edits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoEdits"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1525,6 +1535,9 @@
             "type": "integer",
             "title": "Shorts Count",
             "default": 0
+          },
+          "video_edits": {
+            "$ref": "#/components/schemas/VideoEdits"
           }
         },
         "type": "object",
@@ -1623,6 +1636,16 @@
             "maxLength": 100,
             "title": "Thumbnail Text",
             "default": ""
+          },
+          "video_edits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoEdits"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1735,6 +1758,9 @@
             },
             "type": "array",
             "title": "Transcript"
+          },
+          "video_edits": {
+            "$ref": "#/components/schemas/VideoEdits"
           }
         },
         "type": "object",
@@ -1903,6 +1929,115 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VideoEdits": {
+        "properties": {
+          "framing": {
+            "type": "string",
+            "enum": [
+              "vertical",
+              "horizontal"
+            ],
+            "title": "Framing",
+            "default": "vertical"
+          },
+          "fit": {
+            "type": "string",
+            "enum": [
+              "fit",
+              "fill"
+            ],
+            "title": "Fit",
+            "default": "fit"
+          },
+          "trim_start_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Trim Start Ms",
+            "default": 0
+          },
+          "trim_end_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trim End Ms"
+          },
+          "brightness": {
+            "type": "number",
+            "maximum": 0.3,
+            "minimum": -0.3,
+            "title": "Brightness",
+            "default": 0
+          },
+          "contrast": {
+            "type": "number",
+            "maximum": 1.5,
+            "minimum": 0.5,
+            "title": "Contrast",
+            "default": 1
+          },
+          "saturation": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Saturation",
+            "default": 1
+          },
+          "speed": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.5,
+            "title": "Speed",
+            "default": 1
+          },
+          "volume": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "default": 1
+          },
+          "fade_in": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Fade In",
+            "default": 0
+          },
+          "fade_out": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Fade Out",
+            "default": 0
+          },
+          "rotation": {
+            "type": "integer",
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "title": "Rotation",
+            "default": 0
+          },
+          "flip": {
+            "type": "boolean",
+            "title": "Flip",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VideoEdits",
+        "description": "Small, reversible metadata; never accept arbitrary FFmpeg expressions."
       }
     }
   }

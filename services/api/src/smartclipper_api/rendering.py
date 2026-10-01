@@ -1,4 +1,4 @@
-"""Vertical exports with optional burned captions and original synthetic music beds."""
+"""Bounded native rendering of reversible edits in vertical or horizontal format."""
 
 import math
 import wave
@@ -6,6 +6,7 @@ import wave
 import numpy as np
 
 from .caption_styles import caption_ass
+from .schemas import VideoEdits
 from .worker import run_media
 
 MUSIC = {
@@ -50,9 +51,11 @@ def render_short(
     caption_style="pop",
     caption_position="lower",
     progress=None,
+    video_edits=None,
 ):
     folder.mkdir(parents=True, exist_ok=True)
-    duration = end - start
+    edits = VideoEdits.model_validate(video_edits or {})
+    duration = (end - start) / edits.speed
     args = [
         settings.ffmpeg_path,
         "-v",
@@ -63,34 +66,79 @@ def render_short(
         "file,pipe",
         "-ss",
         str(start),
+        "-t",
+        str(end - start),
         "-i",
         str(source.resolve()),
     ]
     if music != "none":
         music_bed(folder / "music.wav", music, duration)
         args += ["-i", str((folder / "music.wav").resolve())]
-    # Fit all source content on a blurred background: never silently crop a guest or slides.
     width, height = (480, 854) if preview else (720, 1280)
-    graph = (
-        f"[0:v]split=2[bg][fg];[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
-        f"crop={width}:{height},boxblur=12:1[back];"
-        f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2[front];"
-        f"[back][front]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={24 if preview else 30}"
+    if edits.framing == "horizontal":
+        width, height = height, width
+    filters = [f"setpts=(PTS-STARTPTS)/{edits.speed}"]
+    if edits.rotation == 90:
+        filters.append("transpose=1")
+    elif edits.rotation == 180:
+        filters += ["hflip", "vflip"]
+    elif edits.rotation == 270:
+        filters.append("transpose=2")
+    if edits.flip:
+        filters.append("hflip")
+    filters.append(
+        f"eq=brightness={edits.brightness}:contrast={edits.contrast}:saturation={edits.saturation}"
     )
+    # Fit preserves the entire scene; crop only after an explicit Fill frame choice.
+    if edits.fit == "fill" and edits.framing == "vertical":
+        filters += [
+            f"scale={width}:{height}:force_original_aspect_ratio=increase",
+            f"crop={width}:{height}",
+        ]
+    else:
+        filters += [
+            f"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2",
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black",
+        ]
+    filters += ["setsar=1", f"fps={24 if preview else 30}"]
+    graph = "[0:v]" + ",".join(filters)
     if captions:
         (folder / "captions.ass").write_text(
-            caption_ass(captions, caption_style, caption_position), encoding="utf-8"
+            caption_ass(captions, caption_style, caption_position, width, height), encoding="utf-8"
         )
         # Fixed relative filename avoids filter expression injection and Windows drive escaping.
         graph += ",ass=captions.ass"
     graph += "[video]"
+    fade_in = min(edits.fade_in, duration / 2)
+    fade_out = min(edits.fade_out, duration / 2)
+    fades = []
+    if fade_in:
+        fades.append(f"fade=t=in:st=0:d={fade_in}")
+    if fade_out:
+        fades.append(f"fade=t=out:st={duration - fade_out}:d={fade_out}")
+    if fades:
+        graph = graph.removesuffix("[video]") + "," + ",".join(fades) + "[video]"
+    if has_audio:
+        graph += (
+            f";[0:a]asetpts=PTS-STARTPTS,atempo={edits.speed},"
+            f"volume={edits.volume},aresample=async=1:first_pts=0[voice]"
+        )
+    if music != "none":
+        graph += ";[1:a]volume=0.16[bed]"
+    audio_source = "voice" if has_audio else "bed"
     if music != "none" and has_audio:
-        graph += ";[0:a]aresample=async=1:first_pts=0[voice];[1:a]volume=0.16[bed];"
-        graph += "[voice][bed]amix=inputs=2:duration=first:normalize=0[audio]"
-    elif music != "none":
-        graph += ";[1:a]volume=0.16[audio]"
+        graph += ";[voice][bed]amix=inputs=2:duration=first:normalize=0[mixed]"
+        audio_source = "mixed"
+    if has_audio or music != "none":
+        audio_filters = ["anull"]
+        if fade_in:
+            audio_filters.append(f"afade=t=in:st=0:d={fade_in}")
+        if fade_out:
+            audio_filters.append(f"afade=t=out:st={duration - fade_out}:d={fade_out}")
+        graph += f";[{audio_source}]" + ",".join(audio_filters) + "[audio]"
     args += ["-filter_complex_threads", "2", "-filter_complex", graph, "-map", "[video]"]
-    args += ["-map", "[audio]"] if music != "none" else ["-map", "0:a:0?"]
+    if has_audio or music != "none":
+        args += ["-map", "[audio]"]
     args += [
         "-t",
         str(duration),

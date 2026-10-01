@@ -28,6 +28,8 @@ Date: 2026-10-01. Status: guided beta implemented; versions are pinned in lockfi
 
 The guided beta implements account-owned imports, local recognition/translation, transcript-based suggestions, quality checks, vertical exports, covers and aggregate activity. SQLite/local disk remain the developer setup. Bind to localhost; production hosting is a separate milestone. See [the current generation decision](0003-short-generation.md) for working boundaries and deferred release gates.
 
+The local editor now supports reversible source/short trim and picture/audio adjustments, vertical or horizontal exports, and a timeline-ordered shorts feed. See [ADR 0005](0005-reversible-video-editor.md) for media clocks, preview costs and the editor boundary.
+
 The hosted release migrates to PostgreSQL, private object storage, authenticated ownership, durable workers, quotas, and retention. ORM portability alone does not replace testing PostgreSQL migrations and transaction semantics. Do not deploy the local review build publicly.
 
 ## Browser editor
