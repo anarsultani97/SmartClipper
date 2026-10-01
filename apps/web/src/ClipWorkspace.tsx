@@ -464,11 +464,20 @@ export function ThumbnailEditor({
     };
   }, [project.id, shortId, onError]);
   async function download() {
+    if (!draft) return;
     if (isGuest) {
-      requestSignIn();
+      setBusy(true);
+      try {
+        const saved = await api.saveShort(draft);
+        setDraft(saved);
+        requestSignIn();
+      } catch (error) {
+        onError(error);
+      } finally {
+        setBusy(false);
+      }
       return;
     }
-    if (!draft) return;
     try {
       const image = new Image();
       image.src =

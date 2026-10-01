@@ -2,7 +2,8 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { App, Preferences, defaultOptions, navigate } from "./App";
-import { ClipWorkspace } from "./ClipWorkspace";
+import { ClipWorkspace, ThumbnailEditor } from "./ClipWorkspace";
+import { AuthGate } from "./AuthGate";
 import * as api from "./api";
 vi.mock("./api");
 const user = {
@@ -474,4 +475,40 @@ it("shows a ready download when polling only updates export metadata", () => {
     />,
   );
   expect(screen.getByText(/Your MP4 is ready/)).toBeInTheDocument();
+});
+it("persists a guest's cover edits before opening sign-in for JPG download", async () => {
+  const requestSignIn = vi.fn();
+  let finish!: (value: api.Short) => void;
+  vi.mocked(api.shorts).mockResolvedValue([short]);
+  vi.mocked(api.saveShort).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  render(
+    <AuthGate.Provider value={{ isGuest: true, requestSignIn }}>
+      <ThumbnailEditor project={project} shortId={short.id} onError={vi.fn()} />
+    </AuthGate.Provider>,
+  );
+  const text = await screen.findByLabelText("Cover text");
+  await userEvent.clear(text);
+  await userEvent.type(text, "A cover worth keeping");
+  await userEvent.selectOptions(screen.getByLabelText("Text style"), "clean");
+  await userEvent.click(screen.getByRole("button", { name: "Download JPG" }));
+  expect(api.saveShort).toHaveBeenCalledWith(
+    expect.objectContaining({
+      thumbnail_text: "A cover worth keeping",
+      thumbnail_style: "clean",
+    }),
+  );
+  expect(requestSignIn).not.toHaveBeenCalled();
+  await act(async () => {
+    finish({
+      ...short,
+      revision: 2,
+      thumbnail_text: "A cover worth keeping",
+      thumbnail_style: "clean",
+    });
+  });
+  expect(requestSignIn).toHaveBeenCalledOnce();
 });
