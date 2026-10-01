@@ -8,6 +8,8 @@ Implemented beta: the selected guided UI, account-owned MP4 imports, large video
 
 The activity dashboard reads existing database aggregates on demand. Personal activity is available to each user; operator access requires an allowlist of authenticated user IDs. No tracking scripts or session replay are added.
 
+Creator improvements: upload/generation progress rings, playable results as each short finishes, prominent **View shorts** links, local face-aware cover recommendations with people/gameplay/whole-scene framing, multilingual speech accuracy controls, styled word-highlight captions and transcript corrections. Smaller previews speed review; saved captions burn into HD downloads. See [quality research and speed design](docs/architecture/0004-creator-quality-and-speed.md) and [acceptance measurements](docs/development/creator-polish-acceptance.md). Beeps and missing audio require review; the app does not guess censored words.
+
 This is a **local-storage beta**, with account isolation. Google sign-in needs registered provider credentials; see [setup](docs/development/google-sign-in.md). Facebook remains a later UI option. Local clip scoring is a transparent transcript heuristic; optional hosted semantic ranking needs explicit configuration. No instant-processing or virality promise is made. Production storage/queues, email verification/recovery, retention and load testing remain release gates.
 
 ## Start locally
@@ -53,6 +55,7 @@ See [local development](docs/development/local-development.md), [guided UI revie
 - [Technology stack](docs/architecture/tech-stack.md)
 - [Web architecture decision](docs/architecture/0002-web-stack.md)
 - [Generation, authentication, covers and activity dashboard](docs/architecture/0003-short-generation.md)
+- [Creator quality, caption research and faster first results](docs/architecture/0004-creator-quality-and-speed.md)
 - [Team branches and workflow](docs/development/team-workflow.md)
 
 Hosted direction: React + FastAPI + PostgreSQL + private object storage + independent Python workers. FFmpeg performs native media operations; faster-whisper supplies transcription through an adapter. Context selection uses bounded transcript analysis and sparse frames. Keep the source intact and return fewer than five shorts when quality/context cannot support five.
