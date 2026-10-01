@@ -5,7 +5,7 @@ import wave
 
 import numpy as np
 
-from .transcription import caption_text
+from .caption_styles import caption_ass
 from .worker import run_media
 
 MUSIC = {
@@ -46,6 +46,10 @@ def render_short(
     music="none",
     output="clip.mp4",
     has_audio=True,
+    preview=False,
+    caption_style="pop",
+    caption_position="lower",
+    progress=None,
 ):
     folder.mkdir(parents=True, exist_ok=True)
     duration = end - start
@@ -66,16 +70,19 @@ def render_short(
         music_bed(folder / "music.wav", music, duration)
         args += ["-i", str((folder / "music.wav").resolve())]
     # Fit all source content on a blurred background: never silently crop a guest or slides.
+    width, height = (480, 854) if preview else (720, 1280)
     graph = (
-        "[0:v]split=2[bg][fg];[bg]scale=720:1280:force_original_aspect_ratio=increase,"
-        "crop=720:1280,boxblur=20:2[back];"
-        "[fg]scale=720:1280:force_original_aspect_ratio=decrease:force_divisible_by=2[front];"
-        "[back][front]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30"
+        f"[0:v]split=2[bg][fg];[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},boxblur=12:1[back];"
+        f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2[front];"
+        f"[back][front]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={24 if preview else 30}"
     )
     if captions:
-        (folder / "captions.srt").write_text(caption_text(captions, "srt"), encoding="utf-8")
+        (folder / "captions.ass").write_text(
+            caption_ass(captions, caption_style, caption_position), encoding="utf-8"
+        )
         # Fixed relative filename avoids filter expression injection and Windows drive escaping.
-        graph += ",subtitles=captions.srt:force_style='FontSize=20,Outline=2,MarginV=45'"
+        graph += ",ass=captions.ass"
     graph += "[video]"
     if music != "none" and has_audio:
         graph += ";[0:a]aresample=async=1:first_pts=0[voice];[1:a]volume=0.16[bed];"
@@ -90,9 +97,9 @@ def render_short(
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "ultrafast" if preview else "veryfast",
         "-crf",
-        "21",
+        "24" if preview else "21",
         "-pix_fmt",
         "yuv420p",
         "-threads",
@@ -105,4 +112,6 @@ def render_short(
         "+faststart",
         output,
     ]
-    run_media(args, timeout=600, cwd=folder.resolve())
+    if progress:
+        args[1:1] = ["-progress", "pipe:1", "-nostats"]
+    run_media(args, timeout=600, cwd=folder.resolve(), progress=progress)

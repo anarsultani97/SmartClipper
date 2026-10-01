@@ -2,6 +2,8 @@
 
 import json
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import httpx
@@ -11,7 +13,7 @@ from .database import Job, Project, Short
 from .highlights import candidates, select_diverse, semantic_rank
 from .quality import clean_candidate, make_thumbnails, scan_quality
 from .rendering import render_short
-from .transcription import relative_segments, transcribe
+from .transcription import relative_segments, transcribe, transcription_profile
 
 
 def short_folder(settings, short):
@@ -25,32 +27,70 @@ def generate(job, settings, sessions, stage):
     # Preview is normalized once and establishes the shared analysis/render clock.
     source = folder / "preview.mp4"
     options = job.options
-    stage("Transcribing speech")
+    stage("Loading speech model / transcript", 3)
     language = options["language"]
+    mode = options.get("transcription_mode", "balanced")
+    vocabulary = options.get("vocabulary", "")
+    profile = transcription_profile(settings, language, mode, vocabulary)
     transcript = project.transcript
-    if transcript and language != "auto" and project.transcript_language != language:
+    uploaded = transcript and (
+        project.transcription_profile == {"source": "uploaded"}
+        or (project.transcription_profile is None and not any(s.get("words") for s in transcript))
+    )
+    if uploaded and language != "auto" and project.transcript_language != language:
         raise ValueError(
             "Selected language differs from the uploaded transcript. Choose its language."
         )
     detected = project.transcript_language
+    if transcript and not uploaded and project.transcription_profile != profile:
+        transcript = None
     if not transcript:
         if not project.has_audio:
             raise ValueError(
                 "No audio found. Upload a timed SRT transcript before generating shorts."
             )
-        transcript, detected = transcribe(folder / "speech.wav", settings, language)
+        transcript, detected = transcribe(
+            folder / "speech.wav",
+            settings,
+            language,
+            mode=mode,
+            vocabulary=vocabulary,
+            progress=lambda fraction: (
+                stage("Loading speech model", 3)
+                if fraction < 0
+                else stage("Transcribing speech", 5 + round(45 * fraction))
+            ),
+        )
         with sessions() as db:
             stored = db.get(Project, project.id)
             stored.transcript, stored.detected_language = transcript, detected
             stored.transcript_language = detected
+            stored.transcription_profile = profile
             db.commit()
     english = None
     if options["english_subtitles"] and detected != "en":
-        stage("Translating English captions")
+        stage("Translating English captions", 52)
         if not project.has_audio:
             raise ValueError("English translation requires audible speech in this build.")
-        english, _ = transcribe(folder / "speech.wav", settings, detected, translate=True)
-    stage("Checking scenes and context")
+        english_cache = folder / "english-v2.json"
+        saved = json.loads(english_cache.read_text()) if english_cache.is_file() else {}
+        if saved.get("profile") == profile and saved.get("detected") == detected:
+            english = saved["segments"]
+        else:
+            english, _ = transcribe(
+                folder / "speech.wav",
+                settings,
+                detected,
+                translate=True,
+                mode=mode,
+                vocabulary=vocabulary,
+            )
+            temporary = english_cache.with_suffix(".tmp")
+            temporary.write_text(
+                json.dumps({"profile": profile, "detected": detected, "segments": english})
+            )
+            temporary.replace(english_cache)
+    stage("Checking scenes and context", 60)
     samples = scan_quality(source, settings)
     pool = [
         c
@@ -64,14 +104,27 @@ def generate(job, settings, sessions, stage):
             "No clean, complete speech excerpts fit this length. Try a longer length, "
             "a clearer video, or a timed transcript."
         )
-    for index, item in enumerate(chosen):
-        stage(f"Rendering short {index + 1} of {len(chosen)}")
+    lock = threading.Lock()
+    completed = set()
+    fractions = {i: 0.0 for i in range(len(chosen))}
+
+    def render_progress(index, fraction):
+        with lock:
+            fractions[index] = max(fractions[index], fraction)
+            percent = 68 + round(30 * sum(fractions.values()) / len(chosen))
+            stage(f"Creating shorts · {len(completed)}/{len(chosen)} ready", percent)
+
+    def create(index, item):
+        cover_text = item["title"]
+        if len(cover_text) > 48:
+            prefix = cover_text[:45]
+            cover_text = (prefix.rsplit(" ", 1)[0] if " " in prefix else prefix) + "…"
         short = Short(
             id=str(uuid4()),
             project_id=project.id,
             job_id=job.id,
             title=item["title"],
-            thumbnail_text=item["title"],
+            thumbnail_text=cover_text,
             summary=item["summary"],
             start_ms=round(item["start"] * 1000),
             end_ms=round(item["end"] * 1000),
@@ -81,24 +134,49 @@ def generate(job, settings, sessions, stage):
             else None,
             subtitles=1,
             subtitle_language="en" if options["english_subtitles"] else "original",
-            music="calm",
+            music="none",
             thumbnail=0,
             thumbnail_style="bold",
             revision=1,
-            quality_note=note
-            + " Visual quality sampled every two seconds; preview before sharing.",
+            quality_note=(
+                note
+                + " Quality sampled every two seconds. Review captions and framing before sharing."
+            )[:500],
         )
         output = short_folder(settings, short)
-        render_short(
-            source, output, item["start"], item["end"], settings, has_audio=bool(project.has_audio)
+        short.thumbnails = make_thumbnails(
+            source, output, item, settings, options.get("thumbnail_focus", "auto")
         )
-        short.thumbnails = make_thumbnails(source, output, item, settings)
+        render_progress(index, 0.15)
+        render_short(
+            source,
+            output,
+            item["start"],
+            item["end"],
+            settings,
+            has_audio=bool(project.has_audio),
+            preview=True,
+            progress=lambda seconds: render_progress(
+                index, min(0.95, 0.15 + 0.8 * seconds / (item["end"] - item["start"]))
+            ),
+        )
         if len(short.thumbnails) < 3:
             short.quality_note += " Fewer than three clear thumbnail frames passed the checks."
         with sessions() as db:
             db.add(short)
             db.commit()
-    stage(f"Ready: {len(chosen)} shorts")
+        with lock:
+            completed.add(index)
+        render_progress(index, 1.0)
+
+    stage("Selecting clear covers", 68)
+    # Publish the first fully rendered clip promptly, then keep concurrency bounded.
+    create(0, chosen[0])
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(create, index, item) for index, item in enumerate(chosen[1:], 1)]
+        for future in futures:
+            future.result()
+    stage(f"Ready: {len(chosen)} shorts", 99)
 
 
 def export(job, settings, sessions, stage):
@@ -106,7 +184,7 @@ def export(job, settings, sessions, stage):
     with sessions() as db:
         short = db.get(Short, options["short_id"])
         project = db.get(Project, short.project_id)
-    stage("Rendering your export")
+    stage("Rendering your export", 5)
     folder = short_folder(settings, short) / "exports" / job.id
     render_short(
         settings.data_dir / project.id / "preview.mp4",
@@ -117,6 +195,12 @@ def export(job, settings, sessions, stage):
         captions=options["captions"] if options["subtitles"] else None,
         music=options["music"],
         has_audio=bool(project.has_audio),
+        caption_style=options.get("caption_style", "pop"),
+        caption_position=options.get("caption_position", "lower"),
+        progress=lambda seconds: stage(
+            "Rendering your export",
+            min(98, 5 + round(93 * seconds / ((options["end_ms"] - options["start_ms"]) / 1000))),
+        ),
     )
     with sessions() as db:
         # A render of an old revision must never appear as the current export.
@@ -126,7 +210,7 @@ def export(job, settings, sessions, stage):
             .values(export_revision=options["revision"])
         )
         db.commit()
-    stage("Export ready")
+    stage("Export ready", 99)
 
 
 def process_job(settings, sessions):
@@ -141,17 +225,30 @@ def process_job(settings, sessions):
         if claim.rowcount != 1:
             return True
 
-    def stage(message):
-        with sessions() as db:
-            stored = db.get(Job, job.id)
-            stored.stage = message
-            db.commit()
+    last_progress = 0
+    last_message = ""
+    stage_lock = threading.Lock()
+
+    def stage(message, progress=0):
+        nonlocal last_progress, last_message
+        with stage_lock:
+            progress = max(last_progress, min(99, progress))
+            if progress == last_progress and message == last_message:
+                return
+            last_progress = progress
+            last_message = message
+            with sessions() as db:
+                stored = db.get(Job, job.id)
+                stored.stage = message[:40]
+                stored.progress = progress
+                db.commit()
 
     try:
         (generate if job.kind == "generate" else export)(job, settings, sessions, stage)
         with sessions() as db:
             stored = db.get(Job, job.id)
             stored.status = "ready"
+            stored.progress = 100
             db.commit()
     except Exception as exc:
         if isinstance(exc, subprocess.SubprocessError):

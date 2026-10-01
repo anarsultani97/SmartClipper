@@ -13,10 +13,11 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from .auth import require_account, require_user
+from .caption_styles import caption_groups
 from .database import Job, Short, User
 from .pipeline import short_folder
 from .rendering import MUSIC
-from .schemas import GenerateOptions, JobView, ShortEdit, ShortView, TranscriptUpload
+from .schemas import CaptionEdit, GenerateOptions, JobView, ShortEdit, ShortView, TranscriptUpload
 from .transcription import caption_text, parse_srt
 
 CurrentUser = Annotated[User, Depends(require_user)]
@@ -38,6 +39,8 @@ def short_view(short):
         "thumbnail_text",
         "subtitles",
         "subtitle_language",
+        "caption_style",
+        "caption_position",
         "music",
         "revision",
         "export_revision",
@@ -55,7 +58,7 @@ def job_view(job):
         {
             **{
                 name: getattr(job, name)
-                for name in ("id", "project_id", "kind", "status", "stage", "error")
+                for name in ("id", "project_id", "kind", "status", "stage", "error", "progress")
             },
             "options": {key: value for key, value in job.options.items() if key != "captions"},
         }
@@ -97,6 +100,7 @@ def install_short_routes(app, settings, sessions, get_project):
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             project.transcript = segments
+            project.transcription_profile = {"source": "uploaded"}
             project.detected_language = project.transcript_language = payload.language
             db.commit()
             return {"segments": len(segments), "language": payload.language}
@@ -160,13 +164,21 @@ def install_short_routes(app, settings, sessions, get_project):
     def shorts(project_id: str, user: CurrentUser):
         with sessions() as db:
             get_project(db, project_id, user)
-            # Failed/partial generations never publish half a result set.
+            # Rows are committed only after each clip and its covers are complete.
+            # Keep the newest generation with finished clips; don't mix old and new sets.
+            latest = db.scalar(
+                select(Short.job_id)
+                .join(Job, Short.job_id == Job.id)
+                .where(Short.project_id == project_id)
+                .order_by(Job.created_at.desc())
+                .limit(1)
+            )
             return [
                 short_view(s)
                 for s in db.scalars(
                     select(Short)
                     .join(Job, Short.job_id == Job.id)
-                    .where(Short.project_id == project_id, Job.status == "ready")
+                    .where(Short.project_id == project_id, Short.job_id == latest)
                     .order_by(Job.created_at.desc(), Short.start_ms)
                 ).all()
             ]
@@ -218,6 +230,8 @@ def install_short_routes(app, settings, sessions, get_project):
                 "subtitles": bool(short.subtitles),
                 "music": short.music,
                 "captions": captions,
+                "caption_style": short.caption_style,
+                "caption_position": short.caption_position,
             }
             job = Job(id=str(uuid4()), project_id=short.project_id, kind="export", options=options)
             db.add(job)
@@ -230,8 +244,6 @@ def install_short_routes(app, settings, sessions, get_project):
             raise HTTPException(401, "Sign in to download your shorts.")
         with sessions() as db:
             short = get_short(db, short_id, user)
-            if db.get(Job, short.job_id).status != "ready":
-                raise HTTPException(409, "Wait for generation to finish.")
             folder = short_folder(settings, short)
             if kind == "clip":
                 path, mime = folder / "clip.mp4", "video/mp4"
@@ -271,6 +283,64 @@ def install_short_routes(app, settings, sessions, get_project):
             if not segments:
                 raise HTTPException(404, "Generate this caption track first.")
             return Response(caption_text(segments), media_type="text/vtt")
+
+    @app.get("/api/v1/shorts/{short_id}/caption-data/{language}")
+    def caption_data(short_id: str, language: str, user: CurrentUser):
+        with sessions() as db:
+            short = get_short(db, short_id, user)
+            if language not in {"original", "en"}:
+                raise HTTPException(404, "Caption track not found.")
+            segments = short.transcript if language == "original" else short.english_transcript
+            if not segments and language == "en":
+                project = get_project(db, short.project_id, user)
+                segments = short.transcript if project.detected_language == "en" else None
+            if not segments:
+                raise HTTPException(404, "Generate this caption track first.")
+            return {"segments": segments, "groups": caption_groups(segments)}
+
+    @app.put("/api/v1/shorts/{short_id}/captions", response_model=ShortView)
+    def edit_captions(short_id: str, edit: CaptionEdit, user: CurrentUser):
+        with sessions() as db:
+            short = get_short(db, short_id, user)
+            original = short.transcript if edit.language == "original" else short.english_transcript
+            if original is None:
+                raise HTTPException(422, "Generate this caption track first.")
+            duration = (short.end_ms - short.start_ms) / 1000
+            if any(c.end > duration + 0.05 for c in edit.segments):
+                raise HTTPException(422, "Captions must fit within this short.")
+            segments = []
+            for cue in edit.segments:
+                existing = next(
+                    (
+                        s
+                        for s in original
+                        if s["start"] == cue.start and s["end"] == cue.end and s["text"] == cue.text
+                    ),
+                    None,
+                )
+                # Preserve trustworthy existing alignment, never trust client word timestamps.
+                segments.append(
+                    existing
+                    if existing
+                    else {
+                        "start": cue.start,
+                        "end": cue.end,
+                        "text": cue.text.strip(),
+                        "words": [],
+                        "review": False,
+                    }
+                )
+            field = "transcript" if edit.language == "original" else "english_transcript"
+            changed = db.execute(
+                update(Short)
+                .where(Short.id == short.id, Short.revision == edit.revision)
+                .values(**{field: segments}, revision=edit.revision + 1, export_revision=None)
+            )
+            if changed.rowcount != 1:
+                raise HTTPException(409, "This short changed in another tab. Reload before saving.")
+            db.commit()
+            db.expire_all()
+            return short_view(get_short(db, short_id, user))
 
     @app.put("/api/v1/shorts/{short_id}/thumbnail", response_model=ShortView)
     async def upload_thumbnail(short_id: str, request: Request, user: CurrentUser, revision: int):
