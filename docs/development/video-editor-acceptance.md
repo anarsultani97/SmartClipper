@@ -6,7 +6,7 @@ Date: 2026-10-01. Local Windows development build. Unit suites and automatic CI 
 
 | Area | Evidence |
 | --- | --- |
-| Static/build checks | Frontend TypeScript and production build passed (91.50 KB JS gzip, approximately 3.9 KB above the previous build). Python Ruff passed. No editor dependency added. |
+| Static/build checks | Frontend TypeScript, production build and Prettier formatting check passed (91.50 KB JS gzip, approximately 3.9 KB above the previous build). Python Ruff passed. No editor dependency added. |
 | Database | Migration 0008 applied locally; untouched revision-1 legacy minute selections expand to full duration. Explicit saved selections remain unchanged. |
 | Visible shorts | Existing five-minute English Ludwig workspace shows four separate numbered cards in source-time order. The old horizontal tab strip is removed. |
 | Preview cost | Four visible cards mount one video element. Other cards use lazy covers. No document-width overflow in the user's current Chrome viewport. |
