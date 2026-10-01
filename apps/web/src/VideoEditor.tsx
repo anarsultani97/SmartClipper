@@ -167,7 +167,7 @@ export function VideoEditor({
             aria-label="Trim start"
             min={0}
             max={Math.max(0, end - 500 * value.speed)}
-            step={10}
+            step={1}
             value={value.trim_start_ms}
             onChange={(e) => set("trim_start_ms", Number(e.target.value))}
           />
@@ -177,9 +177,12 @@ export function VideoEditor({
           <input
             type="range"
             aria-label="Trim end"
-            min={Math.min(durationMs, value.trim_start_ms + 500 * value.speed)}
+            min={Math.min(
+              durationMs,
+              value.trim_start_ms + Math.ceil(500 * value.speed),
+            )}
             max={durationMs}
-            step={10}
+            step={1}
             value={end}
             onChange={(e) => set("trim_end_ms", Number(e.target.value))}
           />
@@ -398,6 +401,7 @@ export function EditedVideoPlayer({
       frame = requestAnimationFrame(update);
     };
     player.addEventListener("play", play);
+    if (!player.paused) play();
     return () => {
       cancelAnimationFrame(frame);
       player.removeEventListener("play", play);
@@ -453,7 +457,7 @@ export function EditedVideoPlayer({
           style={{
             width: dimensions.width * scale,
             height: dimensions.height * scale,
-            transform: `translate(-50%,-50%) rotate(${edits.rotation}deg) scaleX(${edits.flip ? -1 : 1})`,
+            transform: `translate(-50%,-50%) scaleX(${edits.flip ? -1 : 1}) rotate(${edits.rotation}deg)`,
             filter: `contrast(${edits.contrast}) saturate(${edits.saturation}) url(#${filterId})`,
             opacity: Math.max(0, opacity),
           }}
@@ -481,7 +485,12 @@ export function EditedVideoPlayer({
             }
           }}
         />
-        {captions?.(time)}
+        <div
+          className="caption-layer"
+          style={{ opacity: Math.max(0, opacity) }}
+        >
+          {captions?.(time)}
+        </div>
         <button
           className="caption-fullscreen"
           aria-label="Fullscreen with subtitles"

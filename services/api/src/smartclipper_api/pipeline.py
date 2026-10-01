@@ -9,6 +9,7 @@ from uuid import uuid4
 import httpx
 from sqlalchemy import select, update
 
+from .caption_styles import caption_groups
 from .database import Job, Project, Short
 from .highlights import candidates, select_diverse, semantic_rank
 from .quality import clean_candidate, make_thumbnails, scan_quality
@@ -207,7 +208,9 @@ def export(job, settings, sessions, stage):
         if edits.trim_end_ms is not None
         else options["end_ms"] - options["start_ms"]
     ) / 1000
-    captions = relative_segments(options["captions"], trim_start, trim_end)
+    # Keep the original phrase clock, including unaligned uploaded/edited captions.
+    # Regrouping an already clipped long cue would redistribute its estimated timing.
+    captions = relative_segments(caption_groups(options["captions"]), trim_start, trim_end)
     for cue in captions:
         cue["start"] /= edits.speed
         cue["end"] /= edits.speed

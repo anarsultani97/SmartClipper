@@ -77,7 +77,7 @@ def render_short(
     width, height = (480, 854) if preview else (720, 1280)
     if edits.framing == "horizontal":
         width, height = height, width
-    filters = [f"setpts=(PTS-STARTPTS)/{edits.speed}"]
+    filters = [f"setpts=PTS/{edits.speed}"]
     if edits.rotation == 90:
         filters.append("transpose=1")
     elif edits.rotation == 180:
@@ -120,7 +120,7 @@ def render_short(
         graph = graph.removesuffix("[video]") + "," + ",".join(fades) + "[video]"
     if has_audio:
         graph += (
-            f";[0:a]asetpts=PTS-STARTPTS,atempo={edits.speed},"
+            f";[0:a]asetpts=PTS/{edits.speed},atempo={edits.speed},"
             f"volume={edits.volume},aresample=async=1:first_pts=0[voice]"
         )
     if music != "none":

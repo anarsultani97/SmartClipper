@@ -2365,6 +2365,11 @@ details summary {
   position: absolute;
   pointer-events: none;
 }
+.caption-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .short-poster {
   position: relative;
   display: block;
