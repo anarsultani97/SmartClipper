@@ -20,6 +20,9 @@ class ProjectView(BaseModel):
     revision: int
     detected_language: str | None = None
     transcript_language: str | None = None
+    progress: int = 0
+    stage: str = "Waiting for worker"
+    shorts_count: int = 0
 
 
 LANGUAGES = {"en", "es", "zh", "hi", "ar", "pt", "bn", "ru", "ja", "fr", "tr"}
@@ -41,6 +44,9 @@ class GenerateOptions(BaseModel):
     duration_seconds: int = Field(default=45, ge=15, le=180)
     count: int = Field(default=5, ge=1, le=5)
     english_subtitles: bool = False
+    transcription_mode: Literal["fast", "balanced", "accurate"] = "balanced"
+    vocabulary: str = Field(default="", max_length=160)
+    thumbnail_focus: Literal["auto", "people", "gameplay", "scene"] = "auto"
 
     @model_validator(mode="after")
     def supported_language(self):
@@ -65,16 +71,43 @@ class ShortEdit(BaseModel):
     title: str = Field(min_length=1, max_length=100)
     subtitles: bool = True
     subtitle_language: Literal["original", "en"] = "original"
+    caption_style: Literal["pop", "clean", "karaoke"] = "pop"
+    caption_position: Literal["lower", "middle"] = "lower"
     music: Literal["none", "bright", "calm", "pulse"] = "none"
     thumbnail: int = Field(default=0, ge=0, le=3)
     thumbnail_style: Literal["bold", "clean", "minimal"] = "bold"
     thumbnail_text: str = Field(default="", max_length=100)
 
 
+class CaptionWord(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
 class Caption(BaseModel):
     start: float
     end: float
     text: str
+    words: list[CaptionWord] = Field(default_factory=list)
+    review: bool = False
+
+
+class CaptionEdit(BaseModel):
+    revision: int = Field(ge=1)
+    language: Literal["original", "en"] = "original"
+    segments: list[Caption] = Field(min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def valid_captions(self):
+        previous = 0.0
+        for cue in self.segments:
+            if not (math.isfinite(cue.start) and math.isfinite(cue.end)):
+                raise ValueError("Caption times must be finite.")
+            if not previous <= cue.start < cue.end or not 1 <= len(cue.text.strip()) <= 500:
+                raise ValueError("Use ordered, non-overlapping captions with 1–500 characters.")
+            previous = cue.end
+        return self
 
 
 class ThumbnailView(BaseModel):
@@ -82,6 +115,9 @@ class ThumbnailView(BaseModel):
     time_seconds: float
     sharpness: float | None = None
     brightness: float | None = None
+    faces: int = 0
+    reason: str = "Clear scene"
+    framing: str = "full scene"
 
 
 class ShortView(BaseModel):
@@ -98,6 +134,8 @@ class ShortView(BaseModel):
     thumbnail_text: str
     subtitles: bool
     subtitle_language: str
+    caption_style: str = "pop"
+    caption_position: str = "lower"
     music: str
     revision: int
     export_revision: int | None
@@ -114,6 +152,7 @@ class JobView(BaseModel):
     stage: str
     error: str | None
     options: dict
+    progress: int = 0
 
 
 class ClipSelection(BaseModel):

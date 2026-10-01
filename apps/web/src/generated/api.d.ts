@@ -397,6 +397,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/shorts/{short_id}/caption-data/{language}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Caption Data */
+    get: operations["caption_data_api_v1_shorts__short_id__caption_data__language__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/shorts/{short_id}/captions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Edit Captions */
+    put: operations["edit_captions_api_v1_shorts__short_id__captions_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/shorts/{short_id}/thumbnail": {
     parameters: {
       query?: never;
@@ -460,6 +494,35 @@ export interface components {
       end: number;
       /** Text */
       text: string;
+      /** Words */
+      words?: components["schemas"]["CaptionWord"][];
+      /**
+       * Review
+       * @default false
+       */
+      review: boolean;
+    };
+    /** CaptionEdit */
+    CaptionEdit: {
+      /** Revision */
+      revision: number;
+      /**
+       * Language
+       * @default original
+       * @enum {string}
+       */
+      language: "original" | "en";
+      /** Segments */
+      segments: components["schemas"]["Caption"][];
+    };
+    /** CaptionWord */
+    CaptionWord: {
+      /** Start */
+      start: number;
+      /** End */
+      end: number;
+      /** Text */
+      text: string;
     };
     /** ClipSelection */
     ClipSelection: {
@@ -513,6 +576,23 @@ export interface components {
        * @default false
        */
       english_subtitles: boolean;
+      /**
+       * Transcription Mode
+       * @default balanced
+       * @enum {string}
+       */
+      transcription_mode: "fast" | "balanced" | "accurate";
+      /**
+       * Vocabulary
+       * @default
+       */
+      vocabulary: string;
+      /**
+       * Thumbnail Focus
+       * @default auto
+       * @enum {string}
+       */
+      thumbnail_focus: "auto" | "people" | "gameplay" | "scene";
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -537,6 +617,11 @@ export interface components {
       options: {
         [key: string]: unknown;
       };
+      /**
+       * Progress
+       * @default 0
+       */
+      progress: number;
     };
     /** ProjectView */
     ProjectView: {
@@ -568,6 +653,21 @@ export interface components {
       detected_language?: string | null;
       /** Transcript Language */
       transcript_language?: string | null;
+      /**
+       * Progress
+       * @default 0
+       */
+      progress: number;
+      /**
+       * Stage
+       * @default Waiting for worker
+       */
+      stage: string;
+      /**
+       * Shorts Count
+       * @default 0
+       */
+      shorts_count: number;
     };
     /** ShortEdit */
     ShortEdit: {
@@ -586,6 +686,18 @@ export interface components {
        * @enum {string}
        */
       subtitle_language: "original" | "en";
+      /**
+       * Caption Style
+       * @default pop
+       * @enum {string}
+       */
+      caption_style: "pop" | "clean" | "karaoke";
+      /**
+       * Caption Position
+       * @default lower
+       * @enum {string}
+       */
+      caption_position: "lower" | "middle";
       /**
        * Music
        * @default none
@@ -637,6 +749,16 @@ export interface components {
       subtitles: boolean;
       /** Subtitle Language */
       subtitle_language: string;
+      /**
+       * Caption Style
+       * @default pop
+       */
+      caption_style: string;
+      /**
+       * Caption Position
+       * @default lower
+       */
+      caption_position: string;
       /** Music */
       music: string;
       /** Revision */
@@ -675,6 +797,21 @@ export interface components {
       sharpness?: number | null;
       /** Brightness */
       brightness?: number | null;
+      /**
+       * Faces
+       * @default 0
+       */
+      faces: number;
+      /**
+       * Reason
+       * @default Clear scene
+       */
+      reason: string;
+      /**
+       * Framing
+       * @default full scene
+       */
+      framing: string;
     };
     /** TranscriptUpload */
     TranscriptUpload: {
@@ -1428,6 +1565,73 @@ export interface operations {
         };
         content: {
           "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  caption_data_api_v1_shorts__short_id__caption_data__language__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        short_id: string;
+        language: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  edit_captions_api_v1_shorts__short_id__captions_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        short_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaptionEdit"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ShortView"];
         };
       };
       /** @description Validation Error */

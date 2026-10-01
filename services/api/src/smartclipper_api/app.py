@@ -6,13 +6,13 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import install_auth, require_user
 from .config import Settings
-from .database import Project, User, make_database
+from .database import Project, Short, User, make_database
 from .schemas import ClipSelection, ProjectView
 from .storage import remove_project_files
 
@@ -77,11 +77,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v1/projects", response_model=list[ProjectView])
     def list_projects(user: CurrentUser):
         with sessions() as session:
-            return session.scalars(
+            projects = session.scalars(
                 select(Project)
                 .where(Project.owner_id == user.id, Project.status != "deleted")
                 .order_by(Project.created_at.desc())
             ).all()
+            counts = dict(
+                session.execute(
+                    select(Short.project_id, func.count(Short.id))
+                    .join(Project)
+                    .where(Project.owner_id == user.id, Project.status != "deleted")
+                    .group_by(Short.project_id)
+                ).all()
+            )
+            for project in projects:
+                project.shorts_count = counts.get(project.id, 0)
+            return projects
 
     @app.get("/api/v1/projects/{project_id}", response_model=ProjectView)
     def project_detail(project_id: str, user: CurrentUser):
@@ -192,6 +203,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if project.status != "failed":
                 raise HTTPException(409, "Only failed imports can be retried.")
             project.status, project.error = "queued", None
+            project.progress, project.stage = 0, "Waiting for worker"
             session.commit()
             return project
 

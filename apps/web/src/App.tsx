@@ -26,6 +26,7 @@ import { AuthView } from "./AuthView";
 import { ClipWorkspace, ThumbnailEditor } from "./ClipWorkspace";
 import { ActivityDashboard } from "./ActivityDashboard";
 import { AuthGate, useAuthGate } from "./AuthGate";
+import { ProgressRing } from "./ProgressRing";
 
 export const languages = [
   ["en", "English"],
@@ -46,6 +47,9 @@ export const defaultOptions: api.Options = {
   duration_seconds: 45,
   count: 5,
   english_subtitles: false,
+  transcription_mode: "balanced",
+  thumbnail_focus: "auto",
+  vocabulary: "",
 };
 export function navigate(path: string) {
   window.history.pushState(null, "", path);
@@ -131,6 +135,45 @@ export function Preferences({
           onChange={(e) => change("english_subtitles", e.target.checked)}
         />
       </label>
+      <details className="advanced-preferences">
+        <summary>Speech accuracy & cover framing</summary>
+        <label>
+          Speech processing
+          <select
+            value={value.transcription_mode || "balanced"}
+            onChange={(e) => change("transcription_mode", e.target.value)}
+          >
+            <option value="fast">Fast · clearer audio</option>
+            <option value="balanced">Balanced · multilingual speech</option>
+            <option value="accurate">Higher accuracy · takes longer</option>
+          </select>
+        </label>
+        <label>
+          Names, slang or game terms
+          <input
+            maxLength={160}
+            placeholder="Optional: names or terms heard in the video"
+            value={value.vocabulary || ""}
+            onChange={(e) => change("vocabulary", e.target.value)}
+          />
+        </label>
+        <label>
+          Thumbnail focus
+          <select
+            value={value.thumbnail_focus || "auto"}
+            onChange={(e) => change("thumbnail_focus", e.target.value)}
+          >
+            <option value="auto">Auto · people & scene</option>
+            <option value="people">People & guests</option>
+            <option value="gameplay">Gameplay + creator</option>
+            <option value="scene">Keep the whole scene</option>
+          </select>
+        </label>
+        <p className="hint">
+          Explicit language and names can help recognition. Beeps and muted
+          words need your review; missing audio cannot be recovered.
+        </p>
+      </details>
       <p className="hint">
         Sentence boundaries may make clips shorter. These are duration
         preferences, not platform upload limits.
@@ -154,6 +197,18 @@ export function App() {
   const [options, setOptions] = useState(defaultOptions);
   const [progress, setProgress] = useState<number | null>(null);
   const [uploadingName, setUploadingName] = useState("");
+  const [localPreview, setLocalPreview] = useState("");
+  const [localPreviewId, setLocalPreviewId] = useState("");
+  useEffect(
+    () => () => {
+      if (localPreview) URL.revokeObjectURL(localPreview);
+    },
+    [localPreview],
+  );
+  useEffect(() => {
+    setLocalPreview("");
+    setLocalPreviewId("");
+  }, [user?.id]);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [highlightedProject, setHighlightedProject] = useState("");
@@ -251,6 +306,9 @@ export function App() {
     }
     setError("");
     setProgress(0);
+    setLocalPreview(URL.createObjectURL(file));
+    setLocalPreviewId("");
+    navigate("/");
     setUploadingName(file.name);
     abort.current = new AbortController();
     const epoch = accountEpoch.current;
@@ -263,6 +321,7 @@ export function App() {
         abort.current.signal,
       );
       if (epoch !== accountEpoch.current) return;
+      setLocalPreviewId(p.id);
       ++refreshSequence.current;
       setProjects((old) => [p, ...old.filter((v) => v.id !== p.id)]);
       navigate(`/projects/${p.id}`);
@@ -271,7 +330,10 @@ export function App() {
         "Video uploaded! Follow its preparation in Recent videos on the left (above on mobile).",
       );
     } catch (e) {
-      if (epoch === accountEpoch.current) setError(message(e));
+      if (epoch === accountEpoch.current) {
+        setError(message(e));
+        setLocalPreview("");
+      }
     } finally {
       if (epoch === accountEpoch.current) {
         setProgress(null);
@@ -600,6 +662,9 @@ export function App() {
                   refresh={refresh}
                   onError={reportError}
                   onNotice={setNotice}
+                  localPreview={
+                    localPreviewId === selected.id ? localPreview : ""
+                  }
                 />
               )
             ) : selectedId ? (
@@ -648,32 +713,56 @@ export function App() {
                       void upload(e.dataTransfer.files[0]);
                     }}
                   >
-                    <div className="upload-symbol">
-                      <Upload size={30} />
-                      <span>
-                        <Sparkles size={14} />
-                      </span>
-                    </div>
-                    <h2>Your next short starts here.</h2>
-                    <p>Drop your video, or choose one to get started.</p>
-                    <button
-                      className="primary"
-                      disabled={progress !== null}
-                      onClick={() => input.current?.click()}
-                    >
-                      {progress !== null ? (
-                        <LoaderCircle className="spin" size={18} />
+                    {progress !== null ? (
+                      progress === 100 && localPreview ? (
+                        <>
+                          <video
+                            className="local-upload-preview"
+                            controls
+                            src={localPreview}
+                          />
+                          <p role="status">
+                            Upload complete. Preparing your video for shorts…
+                          </p>
+                        </>
                       ) : (
-                        <Plus size={18} />
-                      )}{" "}
-                      {progress !== null
-                        ? `Uploading ${progress}%`
-                        : "Choose video"}
-                    </button>
-                    <small>MP4 · up to 3 GB · up to 30 minutes</small>
-                    <div className="upload-foot">
-                      <Check size={14} /> Original audio stays with your story
-                    </div>
+                        <ProgressRing
+                          value={progress}
+                          label="Uploading your video"
+                          detail="Your preview will appear when upload reaches 100%."
+                        />
+                      )
+                    ) : (
+                      <>
+                        <div className="upload-symbol">
+                          <Upload size={30} />
+                          <span>
+                            <Sparkles size={14} />
+                          </span>
+                        </div>
+                        <h2>Your next short starts here.</h2>
+                        <p>Drop your video, or choose one to get started.</p>
+                        <button
+                          className="primary"
+                          disabled={progress !== null}
+                          onClick={() => input.current?.click()}
+                        >
+                          {progress !== null ? (
+                            <LoaderCircle className="spin" size={18} />
+                          ) : (
+                            <Plus size={18} />
+                          )}{" "}
+                          {progress !== null
+                            ? `Uploading ${progress}%`
+                            : "Choose video"}
+                        </button>
+                        <small>MP4 · up to 3 GB · up to 30 minutes</small>
+                        <div className="upload-foot">
+                          <Check size={14} /> Original audio stays with your
+                          story
+                        </div>
+                      </>
+                    )}
                   </div>
                   <section className="card import-options">
                     <span className="step-label">01 / MAKE IT YOURS</span>
@@ -732,11 +821,7 @@ export function App() {
                             .includes(search.toLowerCase()),
                         )
                         .map((p) => (
-                          <button
-                            className="project-card"
-                            key={p.id}
-                            onClick={() => navigate(`/projects/${p.id}`)}
-                          >
+                          <div className="project-card" key={p.id}>
                             <div className="project-cover">
                               {p.status === "ready" ? (
                                 <img
@@ -756,8 +841,26 @@ export function App() {
                                 {formatTime(p.duration_seconds || 0)}{" "}
                                 <ArrowRight size={16} />
                               </span>
+                              <div className="library-actions">
+                                <button
+                                  className="text-button"
+                                  onClick={() => navigate(`/projects/${p.id}`)}
+                                >
+                                  Open video
+                                </button>
+                                {!!p.shorts_count && (
+                                  <button
+                                    className="primary shorts-return"
+                                    onClick={() =>
+                                      navigate(`/projects/${p.id}/shorts`)
+                                    }
+                                  >
+                                    <Scissors size={14} /> View shorts
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          </button>
+                          </div>
                         ))}
                     </div>
                   ) : (
@@ -788,6 +891,7 @@ function SourceWorkspace({
   refresh,
   onError,
   onNotice,
+  localPreview,
 }: {
   project: api.Project;
   options: api.Options;
@@ -795,6 +899,7 @@ function SourceWorkspace({
   refresh: () => Promise<void>;
   onError: (e: unknown) => void;
   onNotice: (m: string) => void;
+  localPreview: string;
 }) {
   const { isGuest, requestSignIn } = useAuthGate();
   const [busy, setBusy] = useState(false);
@@ -827,7 +932,7 @@ function SourceWorkspace({
           </p>
         </div>
         <button
-          className="secondary"
+          className="primary shorts-return"
           onClick={() => navigate(`/projects/${project.id}/shorts`)}
         >
           View shorts <ArrowRight size={16} />
@@ -835,14 +940,23 @@ function SourceWorkspace({
       </div>
       <div className="source-grid">
         <section className="source-player card">
-          {project.status === "ready" ? (
+          {project.status !== "failed" &&
+          (project.status === "ready" || localPreview) ? (
             <>
               <video
                 ref={video}
                 controls
                 preload="metadata"
-                src={api.mediaUrl(project.id, "preview")}
-                poster={api.mediaUrl(project.id, "thumbnail")}
+                src={
+                  project.status === "ready"
+                    ? api.mediaUrl(project.id, "preview")
+                    : localPreview
+                }
+                poster={
+                  project.status === "ready"
+                    ? api.mediaUrl(project.id, "thumbnail")
+                    : undefined
+                }
               />
               <div className="source-timeline">
                 <span>0:00</span>
@@ -862,7 +976,10 @@ function SourceWorkspace({
               </div>
               <div className="player-footer">
                 <span>
-                  <Film size={16} /> Original video
+                  <Film size={16} />{" "}
+                  {project.status === "ready"
+                    ? "Original video"
+                    : `${project.stage} · ${project.progress}%`}
                 </span>
                 {project.has_audio && (
                   <a
@@ -881,9 +998,13 @@ function SourceWorkspace({
             </>
           ) : (
             <div className="preparing">
-              <LoaderCircle
-                className={project.status === "failed" ? "" : "spin"}
-              />
+              {project.status !== "failed" && (
+                <ProgressRing
+                  value={project.progress || 0}
+                  label={project.stage || "Getting your story ready"}
+                  detail="Preparing video and audio. You can leave this page and come back."
+                />
+              )}
               <h2>
                 {project.status === "failed"
                   ? "This video needs attention."
@@ -1061,7 +1182,11 @@ function Results({
       </div>
       {generating && (
         <div className="job-banner" role="status">
-          <LoaderCircle className="spin" />
+          <ProgressRing
+            value={generating.progress || 0}
+            label={generating.stage}
+            compact
+          />
           <div>
             <strong>{generating.stage}</strong>
             <p>
@@ -1069,6 +1194,15 @@ function Results({
             </p>
           </div>
         </div>
+      )}
+      {generating && !current && (
+        <section className="generation-stage card">
+          <ProgressRing
+            value={generating.progress || 0}
+            label={generating.stage}
+            detail="Your first short appears here as soon as it is ready. Percentages show processing progress; duration depends on the video and hardware."
+          />
+        </section>
       )}
       {failed && !generating && (
         <div role="alert" className="alert">

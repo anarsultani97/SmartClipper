@@ -925,6 +925,101 @@
         }
       }
     },
+    "/api/v1/shorts/{short_id}/caption-data/{language}": {
+      "get": {
+        "summary": "Caption Data",
+        "operationId": "caption_data_api_v1_shorts__short_id__caption_data__language__get",
+        "parameters": [
+          {
+            "name": "short_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Short Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shorts/{short_id}/captions": {
+      "put": {
+        "summary": "Edit Captions",
+        "operationId": "edit_captions_api_v1_shorts__short_id__captions_put",
+        "parameters": [
+          {
+            "name": "short_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Short Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptionEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/shorts/{short_id}/thumbnail": {
       "put": {
         "summary": "Upload Thumbnail",
@@ -1047,6 +1142,18 @@
           "text": {
             "type": "string",
             "title": "Text"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/CaptionWord"
+            },
+            "type": "array",
+            "title": "Words"
+          },
+          "review": {
+            "type": "boolean",
+            "title": "Review",
+            "default": false
           }
         },
         "type": "object",
@@ -1056,6 +1163,62 @@
           "text"
         ],
         "title": "Caption"
+      },
+      "CaptionEdit": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "original",
+              "en"
+            ],
+            "title": "Language",
+            "default": "original"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/Caption"
+            },
+            "type": "array",
+            "maxItems": 300,
+            "minItems": 1,
+            "title": "Segments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "segments"
+        ],
+        "title": "CaptionEdit"
+      },
+      "CaptionWord": {
+        "properties": {
+          "start": {
+            "type": "number",
+            "title": "Start"
+          },
+          "end": {
+            "type": "number",
+            "title": "End"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "text"
+        ],
+        "title": "CaptionWord"
       },
       "ClipSelection": {
         "properties": {
@@ -1147,6 +1310,33 @@
             "type": "boolean",
             "title": "English Subtitles",
             "default": false
+          },
+          "transcription_mode": {
+            "type": "string",
+            "enum": [
+              "fast",
+              "balanced",
+              "accurate"
+            ],
+            "title": "Transcription Mode",
+            "default": "balanced"
+          },
+          "vocabulary": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Vocabulary",
+            "default": ""
+          },
+          "thumbnail_focus": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "people",
+              "gameplay",
+              "scene"
+            ],
+            "title": "Thumbnail Focus",
+            "default": "auto"
           }
         },
         "type": "object",
@@ -1202,6 +1392,11 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Options"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress",
+            "default": 0
           }
         },
         "type": "object",
@@ -1315,6 +1510,21 @@
               }
             ],
             "title": "Transcript Language"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress",
+            "default": 0
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage",
+            "default": "Waiting for worker"
+          },
+          "shorts_count": {
+            "type": "integer",
+            "title": "Shorts Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -1360,6 +1570,25 @@
             ],
             "title": "Subtitle Language",
             "default": "original"
+          },
+          "caption_style": {
+            "type": "string",
+            "enum": [
+              "pop",
+              "clean",
+              "karaoke"
+            ],
+            "title": "Caption Style",
+            "default": "pop"
+          },
+          "caption_position": {
+            "type": "string",
+            "enum": [
+              "lower",
+              "middle"
+            ],
+            "title": "Caption Position",
+            "default": "lower"
           },
           "music": {
             "type": "string",
@@ -1462,6 +1691,16 @@
           "subtitle_language": {
             "type": "string",
             "title": "Subtitle Language"
+          },
+          "caption_style": {
+            "type": "string",
+            "title": "Caption Style",
+            "default": "pop"
+          },
+          "caption_position": {
+            "type": "string",
+            "title": "Caption Position",
+            "default": "lower"
           },
           "music": {
             "type": "string",
@@ -1581,6 +1820,21 @@
               }
             ],
             "title": "Brightness"
+          },
+          "faces": {
+            "type": "integer",
+            "title": "Faces",
+            "default": 0
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": "Clear scene"
+          },
+          "framing": {
+            "type": "string",
+            "title": "Framing",
+            "default": "full scene"
           }
         },
         "type": "object",

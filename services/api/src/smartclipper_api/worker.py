@@ -2,7 +2,9 @@
 
 import argparse
 import json
+import re
 import subprocess
+import threading
 import time
 
 from sqlalchemy import select, update
@@ -17,9 +19,66 @@ class ImportCancelled(Exception):
     pass
 
 
-def run_media(args: list[str], timeout: int = 300, cwd=None, cancelled=None):
+def run_media(args: list[str], timeout: int = 300, cwd=None, cancelled=None, progress=None):
     import os
 
+    if progress:
+        if cancelled and cancelled():
+            raise ImportCancelled()
+        # Windows communicate(timeout) does not expose partial stdout. Drain both
+        # streams with bounded native reader threads and deliver progress on this thread.
+        with subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        ) as process:
+            output, errors = [], []
+            latest = [0.0]
+
+            def read(stream, sink, parse=False):
+                for line in iter(stream.readline, b""):
+                    sink.append(line)
+                    if parse:
+                        match = re.fullmatch(rb"out_time_us=(\d+)\s*", line)
+                        if match:
+                            latest[0] = int(match[1]) / 1_000_000
+
+            readers = [
+                threading.Thread(target=read, args=(process.stdout, output, True), daemon=True),
+                threading.Thread(target=read, args=(process.stderr, errors), daemon=True),
+            ]
+            for reader in readers:
+                reader.start()
+            began, reported = time.monotonic(), -1.0
+            try:
+                while True:
+                    if cancelled and cancelled():
+                        raise ImportCancelled()
+                    remaining = timeout - (time.monotonic() - began)
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(args, timeout)
+                    try:
+                        process.wait(timeout=min(0.5, remaining))
+                        break
+                    except subprocess.TimeoutExpired:
+                        if latest[0] != reported:
+                            reported = latest[0]
+                            progress(reported)
+                for reader in readers:
+                    reader.join()
+                stdout, stderr = b"".join(output), b"".join(errors)
+                if process.returncode:
+                    raise subprocess.CalledProcessError(process.returncode, args, stdout, stderr)
+                progress(latest[0])
+                return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+                for reader in readers:
+                    reader.join(timeout=2)
     if cancelled:
         if cancelled():
             raise ImportCancelled()
@@ -62,7 +121,7 @@ def run_media(args: list[str], timeout: int = 300, cwd=None, cancelled=None):
     )
 
 
-def prepare(folder, settings: Settings, cancelled=None) -> dict:
+def prepare(folder, settings: Settings, cancelled=None, progress=None) -> dict:
     source = folder / "source.mp4"
     result = run_media(
         [
@@ -81,6 +140,8 @@ def prepare(folder, settings: Settings, cancelled=None) -> dict:
         cancelled=cancelled,
     )
     metadata = validate_metadata(json.loads(result.stdout), settings.max_duration_seconds)
+    if progress:
+        progress("Preparing video preview", 3)
     base = [
         settings.ffmpeg_path,
         "-hide_banner",
@@ -93,54 +154,64 @@ def prepare(folder, settings: Settings, cancelled=None) -> dict:
         "-i",
         str(source),
     ]
-    run_media(
-        base
-        + [
+    preview_args = base + [
+        "-progress",
+        "pipe:1",
+        "-nostats",
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-vf",
+        "scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "27",
+        "-pix_fmt",
+        "yuv420p",
+        "-threads",
+        "2",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        str(folder / "preview.mp4"),
+    ]
+    if metadata["has_audio"]:
+        # Demux the original once for the preview and downloadable MP3.
+        preview_args += [
             "-map",
-            "0:v:0",
-            "-map",
-            "0:a:0?",
-            "-vf",
-            "scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "27",
-            "-pix_fmt",
-            "yuv420p",
-            "-threads",
-            "2",
+            "0:a:0",
+            "-vn",
             "-c:a",
-            "aac",
-            "-movflags",
-            "+faststart",
-            str(folder / "preview.mp4"),
-        ],
+            "libmp3lame",
+            "-q:a",
+            "2",
+            str(folder / "audio.mp3"),
+        ]
+    run_media(
+        preview_args,
         600,
         cancelled=cancelled,
+        progress=(
+            lambda seconds: progress(
+                "Preparing video & audio",
+                min(82, 3 + round(79 * seconds / metadata["duration_seconds"])),
+            )
+        )
+        if progress
+        else None,
     )
     run_media(
         base + ["-frames:v", "1", "-vf", "scale=480:-2", str(folder / "thumbnail.jpg")],
         cancelled=cancelled,
     )
     if metadata["has_audio"]:
-        run_media(
-            base
-            + [
-                "-map",
-                "0:a:0",
-                "-vn",
-                "-c:a",
-                "libmp3lame",
-                "-q:a",
-                "2",
-                str(folder / "audio.mp3"),
-            ],
-            300,
-            cancelled=cancelled,
-        )
+        if progress:
+            progress("Preparing speech analysis", 88)
         # Whisper and render share the normalized preview clock, including initial
         # audio offsets. MP3 is a user download, not the transcription clock.
         run_media(
@@ -165,6 +236,8 @@ def prepare(folder, settings: Settings, cancelled=None) -> dict:
             ],
             cancelled=cancelled,
         )
+    if progress:
+        progress("Audio and preview prepared", 98)
     return metadata
 
 
@@ -190,9 +263,18 @@ def process_one(settings: Settings, sessions, processor=prepare) -> bool:
             stored = db.get(Project, project_id)
             return not stored or stored.status == "deleted"
 
+    def progress(message, percent):
+        with sessions() as db:
+            db.execute(
+                update(Project)
+                .where(Project.id == project_id, Project.status == "processing")
+                .values(stage=message, progress=percent)
+            )
+            db.commit()
+
     try:
         metadata = (
-            prepare(settings.data_dir / project_id, settings, cancelled)
+            prepare(settings.data_dir / project_id, settings, cancelled, progress)
             if processor is prepare
             else processor(settings.data_dir / project_id, settings)
         )
@@ -203,6 +285,8 @@ def process_one(settings: Settings, sessions, processor=prepare) -> bool:
                 .values(
                     **metadata,
                     status="ready",
+                    progress=100,
+                    stage="Ready",
                     end_ms=min(60000, int(metadata["duration_seconds"] * 1000)),
                 )
             )
