@@ -32,6 +32,8 @@ apps/desktop/src-tauri/binaries/*
 /outputs/
 /.cache/
 *.log
+playwright-report/
+test-results/
 
 # OS / editor local files
 .DS_Store

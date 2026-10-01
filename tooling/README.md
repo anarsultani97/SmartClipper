@@ -1,8 +1,10 @@
-# Tooling
+# Web beta tooling
 
-- `dev/`: future cross-platform environment and development helpers.
-- `build/`: future frontend, worker-sidecar, and desktop packaging helpers.
+- `export-openapi.py`: exports the versioned API schema used to generate frontend contract types.
+- `capture-review.mjs`: captures the guided/sign-in/mobile/activity UI; deterministic fixture data is labeled.
+- `test-podcast-imports.py`: opt-in private network acceptance for two 180-second podcast excerpts, actual speech recognition, suggestions, covers, exports and dashboard latency.
+- `check-live-review.mjs`: checks real browser playback, caption persistence, cover editing/download and responsive results using the ignored smoke account/evidence.
 
-Use Node-based tooling for frontend tasks and Python scripts for media/worker tasks when practical. Avoid assuming Bash on Windows or PowerShell on macOS. Pin tool versions and commit application lockfiles once manifests are added: pnpm lockfile, uv lockfile, and Cargo.lock.
+Run these from the repository root. Internet/model downloads do not run as part of unit tests. Private media, accounts, logs and acceptance evidence live in ignored `.cache/` and `data/`. Do not commit them. npm/uv lockfiles pin the web/API toolchain.
 
-Windows packages and macOS signed/notarized packages need their own platform build jobs. Keep signing secrets in CI secrets or OS credential stores. No build scripts or workflows exist yet.
+The GitHub workflow checks frontend/backend formatting and tests, native FFmpeg processing, migrations and Playwright. Hosted infrastructure and browser acceptance on macOS/Safari remain later milestones.

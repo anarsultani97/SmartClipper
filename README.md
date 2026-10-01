@@ -1,101 +1,100 @@
 # SmartClipper
 
-SmartClipper is a planned desktop app for **Windows and macOS** that turns a longer video into **4-5 context-aware shorts** and extracts audio from MP4 files.
+A web application for turning videos into up to five transcript-based shorts, with captions, clear cover choices and MP3 extraction. Users import, review, customize and download. Social publishing comes later.
 
-## Product goals
+## Current review build
 
-- Import an MP4 video and extract its audio as a separate file.
-- Understand the video's context using a timestamped transcript and selected visual information.
-- Identify 4-5 distinct, engaging moments that preserve the speaker's meaning and form coherent shorts.
-- Detect and exclude blurry, black, corrupted, undecodable, or visually undetectable/unusable scenes from the generated shorts.
-- Keep cuts aligned with speech and scene boundaries; maintain audio/video synchronization.
-- Preview and export the shorts from a Windows or macOS desktop app.
+Implemented beta: the selected guided UI, account-owned MP4 imports, large video/timeline preview, SQLite migrations, a separate durable worker, local multilingual transcription or timed SRT upload, English translation, visual quality sampling, short generation, original instrumental music beds, captions, vertical MP4 export and a dedicated thumbnail editor.
 
-Target 4-5 shorts per video when enough usable content exists. If quality filtering leaves too little material, report the limitation and produce fewer good shorts instead of filling the quota with bad scenes. Keep the source video intact.
+The activity dashboard reads existing database aggregates on demand. Personal activity is available to each user; operator access requires an allowlist of authenticated user IDs. No tracking scripts or session replay are added.
 
-## Planned processing flow
+This is a **local-storage beta**, with account isolation. Google/Facebook OAuth need registered provider credentials. Local clip scoring is a transparent transcript heuristic; optional hosted semantic ranking needs explicit configuration. No instant-processing or virality promise is made. Production storage/queues, email verification/recovery, retention and load testing remain release gates.
 
-1. Inspect the video and extract audio locally.
-2. Produce a timestamped transcript and detect scene boundaries.
-3. Mark unusable time ranges using blur, black-frame, decoding, and visual-usability checks.
-4. Analyze context and rank candidate highlights using the transcript and a small set of representative frames.
-5. Select 4-5 distinct shorts, remove unusable ranges, and preserve coherent speech.
-6. Let the user preview the results, then export shorts and extracted audio.
+## Start locally
 
-The planned stack is **Tauri 2 + React/TypeScript + a Python worker**, with **FFmpeg/ffprobe** handling native media operations. See [the architecture decision](docs/architecture/0001-desktop-stack.md) for boundaries and packaging tradeoffs. Transcription providers, clip duration, and export presets will be selected during implementation.
-## Repository structure
+Requirements: Node.js 24, a clean Python 3.12+ environment, uv, FFmpeg and ffprobe. Run from the repository root. Prefer `uv python install 3.12` and `uv sync --managed-python` if an existing Conda environment conflicts with native speech libraries.
 
-```text
-apps/desktop/                  React UI and Tauri desktop shell
-  src/app/                     Application composition
-  src/features/                Library, editor, and exports
-  src/shared/                  Reusable UI and utilities
-  src-tauri/                   Rust shell, capabilities, sidecar resources
-packages/media-engine/         Python worker with a src package layout
-  src/smartclipper_engine/     Domain, pipeline, adapters, and IPC
-packages/contracts/            Versioned message schemas and examples
-docs/architecture/             Design decisions
-docs/development/              Team workflow
-tooling/                       Development and packaging helpers
-tests/                         Integration, desktop journeys, and fixtures
-.github/                       Pull request template
-.codex/                        Development model configurations
-```
+~~~sh
+npm ci
+uv sync --locked
+uv run alembic upgrade head
+~~~
 
-Each component has a README describing its responsibilities. Empty directories are retained with `.gitkeep` files. This is a structure scaffold; application manifests, dependency lockfiles, executable code, and CI workflows will arrive with implementation.
+Optionally copy .env.example to .env and configure native executable paths. Uploaded media and database files live in ignored data/; do not commit them.
 
-## Team branches
+Run these in three terminals:
 
-Use `main` for integration and pull requests from focused topic branches. Initial team branches are `feature/desktop-ui`, `feature/media-pipeline`, and `feature/ai-highlights`. See [team workflow](docs/development/team-workflow.md) before starting work.
+~~~sh
+uv run uvicorn smartclipper_api.app:app --host 127.0.0.1 --port 8000
+uv run python -m smartclipper_api.worker
+npm run dev
+~~~
 
+Open http://127.0.0.1:5173 and create an account. Only the guided direction remains. The API docs are at http://127.0.0.1:8000/docs.
+
+Import an MP4 (up to 3 GB / 30 minutes), choose language/platform/length, wait for preparation and generate shorts. First use downloads the local speech model. Review each short, toggle captions, select music/cover and render a download. Current exports are 720×1280 and reuse the prepared proxy. One persistent worker is protected by a file lock; interrupted work becomes failed/retryable. Older ownerless projects require explicit operator assignment.
+
+## Validation
+
+~~~sh
+npm test
+npm run build
+uv run pytest
+uv run ruff check .
+npm exec --workspace @smartclipper/web -- playwright install chromium
+npm run test:e2e
+~~~
+
+See [local development](docs/development/local-development.md), [guided UI review](docs/design/ui-directions.md), and [generation architecture](docs/architecture/0003-short-generation.md) for setup, limitations and acceptance evidence.
+
+## Architecture and milestones
+
+- [Step-by-step web workflow and milestones](docs/architecture/initial-implementation-plan.md)
+- [Technology stack](docs/architecture/tech-stack.md)
+- [Web architecture decision](docs/architecture/0002-web-stack.md)
+- [Generation, authentication, covers and activity dashboard](docs/architecture/0003-short-generation.md)
+- [Team branches and workflow](docs/development/team-workflow.md)
+
+Hosted direction: React + FastAPI + PostgreSQL + private object storage + independent Python workers. FFmpeg performs native media operations; faster-whisper supplies transcription through an adapter. Context selection uses bounded transcript analysis and sparse frames. Keep the source intact and return fewer than five shorts when quality/context cannot support five.
+
+## Codebase
+
+~~~text
+apps/web/                      React UI, unit tests, browser tests
+services/api/                  FastAPI, ORM, migrations, local worker, tests
+packages/media-engine/         Reserved reusable media/domain boundaries
+packages/contracts/            Generated API types and contract documentation
+docs/                          Plan, stack, guided UI review, developer guides
+.github/workflows/             Frontend/backend foundation checks
+.codex/                        Development model profiles
+~~~
+
+apps/desktop/ is a historical scaffold superseded by the web decision. Reusable processing will move from the initial local worker to the media-engine package and hosted worker service as the pipeline grows.
 
 ## Development model configuration
 
-| Task | Model | Reasoning | Examples |
+| Task | Model | Reasoning | Profile |
 | --- | --- | --- | --- |
-| Lightweight (default) | GPT-6 Luna (`gpt-6-luna`) | Low | Small edits, documentation, extraction, simple fixes |
-| Medium | GPT-6.1 Sol (`gpt-6.1-sol`) | Medium | Feature implementation, integrations, ordinary debugging |
-| High priority or architecture | GPT-6 Astra (`gpt-6-astra`) | High | Architecture, critical issues, difficult cross-platform design |
+| Lightweight | GPT-6 Luna (gpt-6-luna) | Low | smartclipper-light |
+| Medium | GPT-6.1 Sol (gpt-6.1-sol) | Medium | smartclipper-medium |
+| Architecture / high priority | GPT-6 Astra (gpt-6-astra) | High | smartclipper-high |
 
-The repository's `.codex/config.toml` sets Luna as its default. Named profile files are in `.codex/`. To install them for Codex CLI:
+.codex/config.toml sets the repository default. Named configuration files live in .codex/. Install them in your Codex configuration directory before selecting a profile:
 
-**Windows PowerShell**
-
-```powershell
+~~~powershell
 $configDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 New-Item -ItemType Directory -Path $configDir -Force | Out-Null
 Copy-Item .codex/smartclipper-*.config.toml -Destination $configDir
-```
+~~~
 
-**macOS**
-
-```sh
-mkdir -p "${CODEX_HOME:-$HOME/.codex}"
-cp .codex/smartclipper-*.config.toml "${CODEX_HOME:-$HOME/.codex}/"
-```
-
-Run these commands from this repository:
-
-```sh
+~~~sh
 codex --profile smartclipper-light
 codex --profile smartclipper-medium
 codex --profile smartclipper-high
-```
+~~~
 
-Select the profile before starting the task. For the desktop app or IDE, choose the matching model and reasoning level in its model controls. Project configuration requires a trusted project; explicit session selections may override the repository default.
+Choose the matching model in Codex app/IDE controls where supported. Profiles require a trusted project and can be overridden by explicit session selections. These configure the development assistant; they do not route production inference automatically.
 
-These profiles configure the development assistant. They do not implement automatic model routing or the future app's AI pipeline. The task-selection policy is recorded in `AGENTS.md`.
+## Token and runtime cost
 
-## Token usage policy
-
-- Use Luna for clear, bounded work; use Sol for medium work; reserve Astra for high-priority and architecture work.
-- Read relevant files and focused excerpts; avoid repeatedly loading the whole repository.
-- Keep prompts, handoffs, and final outputs concise; reuse established context.
-- For the future video pipeline, perform media extraction and basic quality checks locally, cache transcripts and scene metadata, and send only relevant transcript sections and representative frames for semantic analysis.
-- Track token use per future AI stage; use explicit output budgets and bounded retries when the runtime pipeline is implemented.
-
-## Current scope
-
-The repository contains product documentation, a desktop/worker folder scaffold, team workflow, and development model configuration/policy. No runnable application is implemented yet.
-
-Configuration references: [Codex profiles](https://learn.chatgpt.com/docs/config-file/config-advanced), [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference), and [model availability](https://learn.chatgpt.com/docs/models).
+Use the smallest suitable development model, focused file excerpts, and reusable findings. Reserve Astra for architecture/high priority. Native media extraction and quality checks run on workers. Cache transcripts/scene metadata; send relevant transcript chunks and a few frames for semantic analysis. Budget runtime tokens and retries independently of development profiles.

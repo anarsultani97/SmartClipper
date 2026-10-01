@@ -1,0 +1,14 @@
+{
+  "name": "smartclipper",
+  "private": true,
+  "workspaces": ["apps/web"],
+  "scripts": {
+    "dev": "npm run dev --workspace @smartclipper/web",
+    "build": "npm run build --workspace @smartclipper/web",
+    "test": "npm run test --workspace @smartclipper/web",
+    "test:e2e": "npm run test:e2e --workspace @smartclipper/web",
+    "format": "npm run format --workspace @smartclipper/web",
+    "format:check": "npm run format:check --workspace @smartclipper/web",
+    "contracts": "uv run python tooling/export-openapi.py && npm exec --workspace @smartclipper/web -- openapi-typescript ../../packages/contracts/openapi.json -o src/generated/api.d.ts"
+  }
+}

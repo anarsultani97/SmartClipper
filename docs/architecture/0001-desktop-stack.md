@@ -1,7 +1,7 @@
 # ADR 0001: Desktop stack and processing boundaries
 
 Date: 2026-09-30
-Status: Accepted for initial structure; validate packaging and video preview in the first vertical slice.
+Status: Superseded by [ADR 0002: Web application](0002-web-stack.md). Retained as historical context; do not use this decision for new implementation.
 
 ## Decision
 
