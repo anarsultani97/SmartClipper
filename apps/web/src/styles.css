@@ -1,13 +1,16 @@
 :root {
   font-family: Inter, system-ui, sans-serif;
-  color: #242c26;
-  background: #f7f8f5;
+  color: #17263f;
+  background: #edf2fa;
   font-synthesis: none;
   font-weight: 400;
-  --green: #22533e;
-  --muted: #778079;
-  --line: #e3e7df;
-  --lime: #ddf7a0;
+  --green: #5135aa;
+  --muted: #4b5c77;
+  --line: #d5dfec;
+  --lime: #e8ddff;
+  --surface: #fff;
+  --soft: #f1edff;
+  --success: #096b5b;
   --radius: 18px;
 }
 * {

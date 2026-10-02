@@ -208,6 +208,8 @@ class JobView(BaseModel):
     error: str | None
     options: dict
     progress: int = 0
+    ready_count: int = 0
+    planned_count: int | None = None
 
 
 class ClipSelection(BaseModel):

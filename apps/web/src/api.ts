@@ -24,7 +24,7 @@ export type Options = {
 };
 export type Job = OptionalDefaults<
   components["schemas"]["JobView"],
-  "progress"
+  "progress" | "ready_count" | "planned_count"
 >;
 type Thumbnail = OptionalDefaults<
   components["schemas"]["ThumbnailView"],
@@ -141,8 +141,10 @@ export const logout = () => request("/auth/logout", { method: "POST" });
 export const generate = (id: string, options: Options) =>
   request<Job>(`/projects/${id}/generate`, json("POST", options));
 export const jobs = (id: string) => request<Job[]>(`/projects/${id}/jobs`);
-export const shorts = (id: string) =>
-  request<Short[]>(`/projects/${id}/shorts`);
+export const shorts = (id: string, jobId?: string) =>
+  request<Short[]>(
+    `/projects/${id}/shorts${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ""}`,
+  );
 export const retryJob = (id: string) =>
   request<Job>(`/jobs/${id}/retry`, { method: "POST" });
 export const uploadTranscript = (id: string, srt: string, language: string) =>

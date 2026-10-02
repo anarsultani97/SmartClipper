@@ -737,6 +737,22 @@
               "type": "string",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
           }
         ],
         "responses": {
@@ -1723,6 +1739,22 @@
             "type": "integer",
             "title": "Progress",
             "default": 0
+          },
+          "ready_count": {
+            "type": "integer",
+            "title": "Ready Count",
+            "default": 0
+          },
+          "planned_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Count"
           }
         },
         "type": "object",

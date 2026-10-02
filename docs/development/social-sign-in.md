@@ -23,6 +23,20 @@ The main workspace remains available to guests. Email signup and login work with
 4. Keep a persistent random `SMARTCLIPPER_SESSION_SECRET` of at least 32 characters. Changing this secret or restarting with a generated temporary secret invalidates in-progress OAuth sessions.
 5. Restart the API and confirm `/api/v1/auth/providers` reports `google: true`. The Google button becomes enabled. A verified Google email is required; Authlib validates state, nonce, issuer, audience and ID-token signature, with PKCE.
 
+### Local credential helper
+
+From the repository root, run:
+
+```powershell
+.\.venv\Scripts\python.exe tooling\configure-social-auth.py --provider google
+# Or configure both providers:
+.\.venv\Scripts\python.exe tooling\configure-social-auth.py
+# Presence report only, no secrets or changes:
+.\.venv\Scripts\python.exe tooling\configure-social-auth.py --check
+```
+
+Enter actual owner registration credentials at the terminal prompts. Secret input is masked, values are saved atomically to the ignored `.env`, unrelated settings are preserved, and missing persistent session secrets are generated. The helper does not create provider registrations or verify consent. Run it in a private local terminal; never send `.env` to chat or commit it. Restart the API after saving.
+
 ## 3. Facebook registration
 
 1. In the owner's [Meta app dashboard](https://developers.facebook.com/apps/), configure the appropriate Facebook Login use case for the app. Follow the [web guide](https://developers.facebook.com/docs/facebook-login/web/) and [manual authorization-code flow](https://developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow/).

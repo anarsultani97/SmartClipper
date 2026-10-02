@@ -23,7 +23,7 @@ uv run python -m smartclipper_api.worker
 npm run dev
 ```
 
-Open http://127.0.0.1:5173 and create an account. The API docs are at http://127.0.0.1:8000/docs. One persistent worker is protected by an OS file lock. Stop it before running the standalone podcast acceptance script.
+Open http://127.0.0.1:5173 to use the guest workspace. Sign in when downloading. The API docs are at http://127.0.0.1:8000/docs. One persistent worker is protected by an OS file lock. Stop it before running the standalone podcast acceptance script.
 
 Import up to 3 GB/30 minutes, choose language/platform/length/count, wait for preparation and generate shorts. Upload a timed SRT in its actual language to skip speech recognition. Local model weights download once to ignored `data/models`. Generated exports are 720×1280 from the prepared proxy, with optional burned subtitles and original music beds. Styled cover downloads are separate JPEGs from the browser editor.
 
@@ -85,4 +85,6 @@ It privately downloads two 180-second FLOSS Weekly excerpts, signs into an isola
 
 `node tooling/capture-review.mjs` produces deterministic guided/sign-in/mobile/activity UI screenshots for documentation. Mocked screenshot data is labeled as a UI fixture, separate from the actual media acceptance run.
 
-The main page opens as a private guest workspace. Registration/sign-in is requested for downloads; existing guest projects move into the account after successful authentication. Guest cookies expire after 24 hours, so sign in to keep access. Facebook is hidden from the account page for now.
+The main page opens as a private guest workspace. Registration/sign-in is requested for downloads; existing guest projects move into the account after successful authentication. Guest cookies expire after 24 hours, so sign in to keep access. Google and Facebook appear on the account page and become enabled when their actual credentials are configured. Use [the local setup helper](social-sign-in.md#local-credential-helper).
+
+Generated shorts appear individually as soon as playable previews finish. The shorts page shows the actual batch count and offers an optional reaction game during processing. See [the progressive experience](../architecture/0007-progressive-shorts-experience.md) and [the hosted beta cost plan](../architecture/hosting-cost-plan.md).
