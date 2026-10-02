@@ -1048,6 +1048,19 @@ function SourceWorkspace({
       </div>
       <div className="source-grid">
         <section className="source-player card">
+          {(project.status === "queued" || project.status === "processing") && (
+            <div className="preparing">
+              <WaitingGame active task="video">
+                <ProgressRing
+                  value={project.progress || 0}
+                  label={simpleStage(
+                    project.stage || "Getting your video ready",
+                  )}
+                  detail="Getting video and audio ready. You can come back later."
+                />
+              </WaitingGame>
+            </div>
+          )}
           {project.status !== "failed" &&
           (project.status === "ready" || localPreview) ? (
             <>
@@ -1125,15 +1138,6 @@ function SourceWorkspace({
             </>
           ) : (
             <div className="preparing">
-              {project.status !== "failed" && (
-                <WaitingGame active task="video">
-                  <ProgressRing
-                    value={project.progress || 0}
-                    label={project.stage || "Getting your video ready"}
-                    detail="Getting video and audio ready. You can come back later."
-                  />
-                </WaitingGame>
-              )}
               <h2>
                 {project.status === "failed"
                   ? "This video needs attention."
