@@ -17,7 +17,7 @@ This specifies the target implementation and validation. The current beta implem
 ### Current milestones, one by one
 
 1. **Guided foundation — implemented.** One UI direction, large preview and timeline, persisted account-owned uploads, MP3 and source review.
-2. **Generation beta — implemented.** Eleven language selections plus auto-detection, timed SRT or local recognition, optional English captions, configurable platform/length/count and a separate results page.
+2. **Generation beta — implemented.** Twelve language selections (including Turkish and Azerbaijani) plus auto-detection, timed SRT or local recognition, optional English captions, configurable platform/length/count and a separate results page.
 3. **Review and export — implemented.** Three context sentences, caption toggles, titles, original music beds, up to three clear covers, a cover editor/custom upload/frame capture, and asynchronous 720×1280 downloads.
 4. **Usage visibility — implemented.** Personal and allowlisted operator aggregate dashboards, requested on demand. Playback/download/click analytics are deliberately not collected.
 5. **Quality and editor acceptance — next.** Native-speaker tests for each language, real OAuth consent with configured apps, VFR/rotation/audio-offset fixtures, stronger semantic ranking evaluation, better automatic framing and original-source-quality exports.

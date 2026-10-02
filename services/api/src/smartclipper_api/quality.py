@@ -40,7 +40,7 @@ def scan_quality(source, settings):
                 return saved["samples"]
         except (ValueError, KeyError, OSError):
             pass
-    # A two-second scan is bounded to ~69 MB for the 30-minute upload limit.
+    # Two-second RGB sampling returns ~396 MiB at the default 60-minute limit.
     result = run_media(
         [
             settings.ffmpeg_path,

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     database_url: str = "sqlite:///data/smartclipper.db"
     max_upload_bytes: int = 3 * 1024 * 1024 * 1024
-    max_duration_seconds: int = 1800
+    max_duration_seconds: int = 3600
     max_audio_bytes: int = 20 * 1024 * 1024
     max_link_imports: int = 2
     ffprobe_path: str = "ffprobe"

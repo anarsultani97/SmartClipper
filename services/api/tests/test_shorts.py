@@ -145,19 +145,25 @@ def test_thumbnail_sanitized_and_revision_protected(client, app, clip):
         assert output.format == "JPEG" and output.size == (720, 1280)
 
 
-def test_partial_failed_generations_are_not_published(client, app, clip, ready):
-    _, job_id = clip
+def test_finished_clips_survive_batch_failure_and_retry_is_separate(client, app, clip, ready):
+    short_id, job_id = clip
     with app.state.sessions() as db:
         db.get(Job, job_id).status = "failed"
         db.commit()
-    assert client.get(f"/api/v1/projects/{ready}/shorts").json() == []
+    assert client.get(f"/api/v1/projects/{ready}/shorts").json()[0]["id"] == short_id
     retried = client.post(f"/api/v1/jobs/{job_id}/retry")
     assert retried.status_code == 202
     assert retried.json()["id"] != job_id
+    assert (
+        client.get(
+            f"/api/v1/projects/{ready}/shorts", params={"job_id": retried.json()["id"]}
+        ).json()
+        == []
+    )
 
 
 def test_pipeline_failure_is_visible_and_retryable(client, app, ready, monkeypatch):
-    def broken(*args):
+    def broken(*args, **kwargs):
         raise ValueError("No clear speech detected.")
 
     monkeypatch.setattr("smartclipper_api.pipeline.transcribe", broken)
@@ -181,7 +187,7 @@ def test_non_english_generation_has_original_and_translated_caption_tracks(
         db.commit()
     calls = []
 
-    def translate(source, settings, language, translate=False):
+    def translate(source, settings, language, translate=False, **kwargs):
         calls.append((language, translate))
         return ([{"start": 1, "end": 20, "text": "This is a complete story to share."}], "es")
 

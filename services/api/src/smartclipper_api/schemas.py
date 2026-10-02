@@ -52,6 +52,13 @@ class VideoEdits(BaseModel):
         return self
 
 
+class HealthView(BaseModel):
+    status: str
+    mode: str
+    max_upload_bytes: int
+    max_duration_seconds: int
+
+
 class ProjectView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -74,7 +81,7 @@ class ProjectView(BaseModel):
     video_edits: VideoEdits = Field(default_factory=VideoEdits)
 
 
-LANGUAGES = {"en", "es", "zh", "hi", "ar", "pt", "bn", "ru", "ja", "fr", "tr"}
+LANGUAGES = {"en", "es", "zh", "hi", "ar", "pt", "bn", "ru", "ja", "fr", "tr", "az"}
 
 
 class Credentials(BaseModel):

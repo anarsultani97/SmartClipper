@@ -101,6 +101,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 export const listProjects = () => request<Project[]>("/projects");
+export const health = () =>
+  request<components["schemas"]["HealthView"]>("/health");
 export const importVideoLink = (url: string) =>
   request<Project>("/projects/link", json("POST", { url }));
 export const removeQueuedVideo = (id: string) =>

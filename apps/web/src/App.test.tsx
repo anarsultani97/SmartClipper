@@ -55,7 +55,21 @@ const short: api.Short = {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   window.history.replaceState(null, "", "/");
+  vi.mocked(api.health).mockResolvedValue({
+    status: "ok",
+    mode: "owned-workspaces",
+    max_upload_bytes: 3 * 1024 ** 3,
+    max_duration_seconds: 3600,
+  });
   vi.mocked(api.currentUser).mockResolvedValue(user);
   vi.mocked(api.guestWorkspace).mockResolvedValue({
     ...user,
@@ -69,6 +83,8 @@ beforeEach(() => {
   });
   vi.mocked(api.jobs).mockResolvedValue([]);
   vi.mocked(api.shorts).mockResolvedValue([]);
+  vi.mocked(api.musicLibrary).mockResolvedValue([]);
+  vi.mocked(api.audioAssets).mockResolvedValue([]);
   vi.mocked(api.mediaUrl).mockImplementation(
     (id, kind) => `/media/${id}/${kind}`,
   );
@@ -168,10 +184,16 @@ it("resets results selection when switching projects", async () => {
         ],
   );
   render(<App />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Edit short/ }),
+  );
   await screen.findByLabelText("Short title");
   await act(async () => {
     navigate("/projects/second/shorts");
   });
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Edit short/ }),
+  );
   await waitFor(() =>
     expect(screen.getByLabelText("Short title")).toHaveValue(
       "Second video story",
@@ -204,10 +226,15 @@ it("ignores results that finish after leaving their project", async () => {
         ]),
   );
   render(<App />);
-  await waitFor(() => expect(api.shorts).toHaveBeenCalledWith("ready"));
+  await waitFor(() =>
+    expect(api.shorts).toHaveBeenCalledWith("ready", undefined),
+  );
   await act(async () => {
     navigate("/projects/second/shorts");
   });
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Edit short/ }),
+  );
   await screen.findByLabelText("Short title");
   await act(async () => {
     finish([short]);
@@ -227,12 +254,14 @@ it("shows only the guided direction even with historical review URLs", async () 
   ).not.toBeInTheDocument();
   expect(screen.getByLabelText("Video language")).toBeInTheDocument();
 });
-it("shows eleven languages including Turkish, auto-detection and English subtitles", async () => {
+it("shows twelve languages including Turkish and Azerbaijani, auto-detection and English subtitles", async () => {
   const change = vi.fn();
   render(<Preferences value={defaultOptions} onChange={change} />);
   expect(
     screen.getByLabelText("Video language").querySelectorAll("option"),
-  ).toHaveLength(12);
+  ).toHaveLength(13);
+  await userEvent.selectOptions(screen.getByLabelText("Video language"), "az");
+  expect(change).toHaveBeenCalledWith({ ...defaultOptions, language: "az" });
   await userEvent.selectOptions(screen.getByLabelText("Video language"), "es");
   expect(change).toHaveBeenCalledWith({ ...defaultOptions, language: "es" });
   await userEvent.click(screen.getByRole("switch"));
@@ -376,6 +405,9 @@ it("opens the main workspace for visitors and asks for sign-in only at download"
   vi.mocked(api.shorts).mockResolvedValue([short]);
   vi.mocked(api.saveShort).mockResolvedValue(short);
   render(<App />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Edit short/ }),
+  );
   await screen.findByLabelText("Short title");
   expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument();
   await userEvent.click(
@@ -385,6 +417,9 @@ it("opens the main workspace for visitors and asks for sign-in only at download"
   expect(api.exportShort).not.toHaveBeenCalled();
   await userEvent.click(
     screen.getByRole("button", { name: /Back to editing/ }),
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Edit short/ }),
   );
   expect(await screen.findByLabelText("Short title")).toBeInTheDocument();
 });
@@ -404,8 +439,8 @@ it("allows subtitles off and saves the exact displayed revision", async () => {
       onError={vi.fn()}
     />,
   );
-  await userEvent.click(screen.getByRole("switch"));
-  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await userEvent.click(screen.getByRole("switch", { name: /Show subtitles/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Apply changes" }));
   expect(api.saveShort).toHaveBeenCalledWith({ ...short, subtitles: false });
   await waitFor(() => expect(saved).toHaveBeenCalled());
 });
@@ -427,7 +462,7 @@ it("does not silently replace a stale draft when another tab edits a short", asy
   expect(screen.getByLabelText("Short title")).toHaveValue(
     "A thoughtful idea edited",
   );
-  expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Apply changes" })).toBeDisabled();
   await userEvent.click(
     screen.getByRole("button", { name: "Load latest version" }),
   );

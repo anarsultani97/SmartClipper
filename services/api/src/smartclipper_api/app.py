@@ -13,7 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .auth import install_auth, require_user
 from .config import Settings
 from .database import Job, Project, Short, User, make_database
-from .schemas import ClipSelection, LinkImport, ProjectView
+from .schemas import ClipSelection, HealthView, LinkImport, ProjectView
 from .storage import remove_project_files
 
 CurrentUser = Annotated[User, Depends(require_user)]
@@ -87,12 +87,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(429, "Wait for a linked video to finish before adding another.")
         return owner_id
 
-    @app.get("/api/v1/health")
+    @app.get("/api/v1/health", response_model=HealthView)
     def health():
         return {
             "status": "ok",
             "mode": "owned-workspaces",
             "max_upload_bytes": settings.max_upload_bytes,
+            "max_duration_seconds": settings.max_duration_seconds,
         }
 
     @app.get("/api/v1/projects", response_model=list[ProjectView])

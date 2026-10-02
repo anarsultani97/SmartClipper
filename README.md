@@ -36,7 +36,7 @@ npm run dev
 
 Open http://127.0.0.1:5173 to enter the main workspace directly. Import, generate and edit as a guest; sign in when downloading. Only the guided direction remains. The API docs are at http://127.0.0.1:8000/docs.
 
-Import an MP4 (up to 3 GB / 30 minutes), choose language/platform/length, wait for preparation and generate shorts. First use downloads the local speech model. Review each short, toggle captions, select music/cover and render a download. Current exports are 720×1280 and reuse the prepared proxy. One persistent worker is protected by a file lock; interrupted work becomes failed/retryable. Older ownerless projects require explicit operator assignment.
+Import an MP4 (up to 3 GB / 60 minutes), choose language/platform/length, wait for preparation and generate shorts. First use downloads the local speech model. Review each short, toggle captions, select music/cover and render a download. Current exports are 720×1280 and reuse the prepared proxy. One persistent worker is protected by a file lock; interrupted work becomes failed/retryable. Older ownerless projects require explicit operator assignment.
 
 ## Validation
 

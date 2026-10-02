@@ -152,7 +152,7 @@ def test_real_generation_quality_thumbnails_and_caption_music_export(tmp_path):
             ).stdout
         )
         video = next(s for s in metadata["streams"] if s["codec_type"] == "video")
-        assert (video["width"], video["height"]) == (720, 1280)
+        assert (video["width"], video["height"]) == (480, 854)
         assert (
             abs(
                 float(metadata["format"]["duration"]) - (short["end_ms"] - short["start_ms"]) / 1000
@@ -171,6 +171,23 @@ def test_real_generation_quality_thumbnails_and_caption_music_export(tmp_path):
         assert process_job(settings, app.state.sessions)
         response = client.get(f"/api/v1/shorts/{short['id']}/media/export?job_id={exported['id']}")
         assert response.status_code == 200
+        downloaded = tmp_path / "downloaded.mp4"
+        downloaded.write_bytes(response.content)
+        export_metadata = json.loads(
+            run_media(
+                [
+                    settings.ffprobe_path,
+                    "-v",
+                    "error",
+                    "-show_streams",
+                    "-of",
+                    "json",
+                    str(downloaded),
+                ]
+            ).stdout
+        )
+        exported_video = next(s for s in export_metadata["streams"] if s["codec_type"] == "video")
+        assert (exported_video["width"], exported_video["height"]) == (720, 1280)
         assert (
             client.get(
                 f"/api/v1/shorts/{short['id']}/media/export?job_id={exported['id']}",

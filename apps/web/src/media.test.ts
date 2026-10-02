@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatTime,
+  formatImportLimits,
   MAX_UPLOAD_BYTES,
   validateVideo,
   validSelection,
@@ -9,6 +10,11 @@ import {
 describe("video validation", () => {
   it("accepts uppercase MP4", () =>
     expect(validateVideo({ name: "Podcast.MP4", size: 10 })).toBeNull());
+  it("uses the configured upload limit", () => {
+    expect(
+      validateVideo({ name: "test.mp4", size: 1024 ** 2 + 1 }, 1024 ** 2),
+    ).toMatch(/1 MB/);
+  });
   it("rejects empty, oversized and non-MP4 files", () => {
     expect(validateVideo({ name: "test.mp4", size: 0 })).toMatch(/empty/);
     expect(
@@ -23,6 +29,25 @@ describe("video validation", () => {
     expect(
       validateVideo({ name: "limit.mp4", size: MAX_UPLOAD_BYTES }),
     ).toBeNull();
+  });
+});
+describe("service import limits", () => {
+  it("displays the configured duration and size", () => {
+    expect(
+      formatImportLimits({
+        max_upload_bytes: 3 * 1024 ** 3,
+        max_duration_seconds: 3600,
+      }),
+    ).toBe("up to 3 GB · up to 60 minutes");
+  });
+  it("does not invent limits when the service is unavailable or invalid", () => {
+    expect(formatImportLimits(null)).toBe("Limits checked by the app service");
+    expect(
+      formatImportLimits({
+        max_upload_bytes: 3 * 1024 ** 3,
+        max_duration_seconds: NaN,
+      }),
+    ).toBe("Limits checked by the app service");
   });
 });
 describe("source time", () => {

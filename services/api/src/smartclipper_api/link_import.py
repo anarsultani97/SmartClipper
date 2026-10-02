@@ -2,11 +2,34 @@
 
 import ipaddress
 import json
+import math
 import re
 import socket
 import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, urlunsplit
+
+
+class ImportRejected(ValueError):
+    """A controlled, safe rejection message that can be shown to the user."""
+
+
+def import_rejection(info, max_duration, max_bytes, *, incomplete=False):
+    if info.get("is_live") or info.get("live_status") == "is_live":
+        return "Live broadcasts cannot be imported. Use a completed video or upload an MP4."
+    if not incomplete:
+        duration = info.get("duration")
+        if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
+            return "The platform did not provide a usable video duration. Upload an MP4 instead."
+        if duration > max_duration:
+            minutes, seconds = divmod(math.ceil(duration), 60)
+            return (
+                f"This video is {minutes}:{seconds:02} long. "
+                f"The import limit is {max_duration / 60:g} minutes. Choose a shorter video."
+            )
+    if (info.get("filesize") or 0) > max_bytes:
+        return f"This video exceeds the {max_bytes / 1024**3:g} GB import limit."
+    return None
 
 
 def video_link(value):
@@ -155,16 +178,14 @@ def main():
     def emit(**data):
         print(json.dumps(data), flush=True)
 
+    rejection = None
+
     def check(info, *, incomplete=False):
-        if info.get("is_live") or info.get("live_status") == "is_live":
-            return "Live broadcasts cannot be imported."
-        if not incomplete:
-            duration = info.get("duration")
-            if not duration or not 0 < duration <= spec["duration"]:
-                return "This video is too long or its duration is unavailable."
-        if (info.get("filesize") or 0) > spec["limit"]:
-            return "This video exceeds the size limit."
-        return None
+        nonlocal rejection
+        reason = import_rejection(info, spec["duration"], spec["limit"], incomplete=incomplete)
+        if reason:
+            rejection = reason
+        return reason
 
     reported = -1
 
@@ -172,7 +193,7 @@ def main():
         nonlocal reported
         size = sum(path.stat().st_size for path in root.glob("source*") if path.is_file())
         if size > spec["limit"]:
-            raise ValueError("Video exceeds the 3 GB import limit.")
+            raise ImportRejected(f"Video exceeds the {spec['limit'] / 1024**3:g} GB import limit.")
         total = item.get("total_bytes") or item.get("total_bytes_estimate")
         percent = min(95, round(100 * item.get("downloaded_bytes", 0) / total)) if total else 0
         if percent != reported:
@@ -214,18 +235,23 @@ def main():
             or metadata.get("_type") in {"playlist", "multi_video"}
             or not source.is_file()
         ):
-            raise ValueError("No downloadable public MP4 video was found.")
+            raise ImportRejected(
+                rejection
+                or "The platform did not return a downloadable MP4. "
+                "Try another public video or upload an MP4."
+            )
         if source.stat().st_size > spec["limit"]:
-            raise ValueError("Video exceeds the import size limit.")
+            raise ImportRejected(f"Video exceeds the {spec['limit'] / 1024**3:g} GB import limit.")
         title = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "", metadata.get("title") or "Linked video")
         emit(filename=(title[:220] or "Linked video") + ".mp4", size_bytes=source.stat().st_size)
     except Exception as exc:
         (root / "import-error.txt").write_text(str(exc)[:4000], encoding="utf-8")
         # Do not send extractor dumps, URL tokens, cookies or environment paths to the UI.
         emit(
-            error="This link could not be imported. It may require sign-in, be private, "
-            "restricted, too long or unavailable. Upload the MP4 instead, "
-            "or try another public video."
+            error=str(exc)
+            if isinstance(exc, ImportRejected)
+            else "This link could not be imported. It may require sign-in, be private, "
+            "restricted or unavailable. Upload the MP4 instead, or try another public video."
         )
         raise SystemExit(1) from None
 

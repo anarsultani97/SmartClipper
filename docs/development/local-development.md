@@ -25,7 +25,7 @@ npm run dev
 
 Open http://127.0.0.1:5173 to use the guest workspace. Sign in when downloading. The API docs are at http://127.0.0.1:8000/docs. One persistent worker is protected by an OS file lock. Stop it before running the standalone podcast acceptance script.
 
-Import up to 3 GB/30 minutes, choose language/platform/length/count, wait for preparation and generate shorts. Upload a timed SRT in its actual language to skip speech recognition. Local model weights download once to ignored `data/models`. Generated exports are 720×1280 from the prepared proxy, with optional burned subtitles and original music beds. Styled cover downloads are separate JPEGs from the browser editor.
+Import up to 3 GB/60 minutes, choose language/platform/length/count, wait for preparation and generate shorts. Upload a timed SRT in its actual language to skip speech recognition. Local model weights download once to ignored `data/models`. Generated exports are 720×1280 from the prepared proxy, with optional burned subtitles and original music beds. Styled cover downloads are separate JPEGs from the browser editor.
 
 ## Optional providers
 

@@ -131,6 +131,8 @@ def transcribe(
         hotwords=vocabulary or None,
         hallucination_silence_threshold=1.0,
     )
+    if info.language not in LANGUAGES:
+        raise ValueError("Detected language is outside the supported language list.")
     result = []
     for segment in segments:
         if progress:
@@ -183,8 +185,6 @@ def transcribe(
                 {"start": start, "end": end, "text": "[beep]", "words": [], "review": True}
             )
     result.sort(key=lambda c: c["start"])
-    if info.language not in LANGUAGES:
-        raise ValueError("Detected language is outside the supported language list.")
     if not result:
         raise ValueError(
             "No clear speech was detected. Upload a timed SRT transcript or another video."

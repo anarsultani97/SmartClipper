@@ -52,7 +52,7 @@ def test_worker_completes_once(app):
     with app.state.sessions() as session:
         project = session.get(Project, "test")
         assert project.status == "ready"
-        assert project.end_ms == 60000
+        assert project.end_ms == 90000
         assert project.has_audio == 1
 
 
