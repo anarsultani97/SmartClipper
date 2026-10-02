@@ -6,6 +6,16 @@ const user = {
   csrf: "test",
 };
 test.beforeEach(async ({ page }) => {
+  await page.route("**/api/v1/health", (route) =>
+    route.fulfill({
+      json: {
+        status: "ok",
+        mode: "owned-workspaces",
+        max_upload_bytes: 3 * 1024 ** 3,
+        max_duration_seconds: 3600,
+      },
+    }),
+  );
   await page.route("**/api/v1/auth/me", (route) =>
     route.fulfill({ json: user }),
   );
@@ -53,7 +63,9 @@ test("new visitors see the main page before sign-in and can return from the acco
   await expect(page.getByLabel("Email address")).toHaveCount(0);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText("Continue with Google")).toBeVisible();
-  await expect(page.getByText("Continue with Facebook")).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: /Continue with Facebook/ }),
+  ).toHaveAttribute("aria-disabled", "true");
   await page.getByRole("button", { name: /Back to editing/ }).click();
   await expect(
     page.getByRole("button", { name: "Choose video" }),
@@ -181,14 +193,33 @@ test("results support subtitle toggles, thumbnails and a large preview", async (
   await page.route("**/api/v1/projects/p/shorts", (route) =>
     route.fulfill({ json: [short] }),
   );
+  await page.route("**/api/v1/music", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/shorts/s/audio", (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.route("**/api/v1/shorts/s/caption-data/original", (route) =>
+    route.fulfill({ json: { groups: [], segments: [] } }),
+  );
+  await page.route("**/api/v1/projects/p/media/preview", (route) =>
+    route.fulfill({ status: 204 }),
+  );
+  await page.route("**/api/v1/shorts/s", async (route) => {
+    expect(route.request().method()).toBe("PATCH");
+    Object.assign(short, route.request().postDataJSON(), {
+      revision: short.revision + 1,
+    });
+    await route.fulfill({ json: short });
+  });
   await page.goto("/projects/p/shorts");
+  await page.getByText("What’s in this moment?", { exact: true }).click();
   await expect(page.getByText("Opening in context.")).toBeVisible();
+  await page.getByRole("button", { name: "Edit short 1", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Choose thumbnail 3" }),
   ).toBeVisible();
-  await page.getByRole("switch").click();
+  await page.getByRole("switch", { name: /Show subtitles/ }).click();
   await expect(page.getByText("Captions off")).toBeVisible();
-  const video = await page.locator("video").boundingBox();
+  const video = await page.locator(".edited-player").boundingBox();
   expect(video?.height).toBeGreaterThan(420);
   await page.getByRole("button", { name: /Edit cover/ }).click();
   await expect(page.getByText("Give your story a cover.")).toBeVisible();
