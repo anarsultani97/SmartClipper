@@ -1,4 +1,16 @@
 export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024 * 1024;
+export function simpleStage(stage: string): string {
+  const labels: Record<string, string> = {
+    "Waiting for worker": "Waiting to start",
+    "Loading speech model / transcript": "Getting subtitles ready",
+    "Loading speech model": "Getting subtitles ready",
+    "Transcribing speech": "Writing subtitles",
+    "Translating English captions": "Adding English subtitles",
+    "Checking scenes and context": "Finding the best parts",
+    "Selecting clear covers": "Choosing covers",
+  };
+  return labels[stage] || stage;
+}
 export type ImportLimits = {
   max_upload_bytes: number;
   max_duration_seconds: number;

@@ -37,9 +37,9 @@ def candidates(segments, duration, target):
                 "score": score,
                 "title": title,
                 "summary": [
-                    f"The excerpt opens with: “{first[:200]}”.",
-                    f"The speaker continues: “{selected[len(selected) // 2]['text'][:200]}”.",
-                    f"The excerpt closes with: “{selected[-1]['text'][:200]}”.",
+                    first[:200],
+                    selected[len(selected) // 2]["text"][:200],
+                    selected[-1]["text"][:200],
                 ],
                 "text": text[:2500],
             }

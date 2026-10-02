@@ -214,8 +214,10 @@ test("results support subtitle toggles, thumbnails and a large preview", async (
     await route.fulfill({ json: short });
   });
   await page.goto("/projects/p/shorts");
-  await page.getByText("What’s in this moment?", { exact: true }).click();
-  await expect(page.getByText("Opening in context.")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "What’s in this moment?" }),
+  ).toBeVisible();
+  await expect(page.getByText(/Opening in context\./)).toBeVisible();
   await page.getByRole("button", { name: "Edit short 1", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Choose thumbnail 3" }),

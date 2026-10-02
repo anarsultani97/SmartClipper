@@ -284,7 +284,7 @@ it("rejects invalid video uploads before the API", async () => {
   );
   expect(api.uploadVideo).not.toHaveBeenCalled();
 });
-it("shows a real upload percentage and accessible progress bar until upload completes", async () => {
+it("shows upload progress, then keeps the preparation game with the local preview", async () => {
   let finish: ((project: api.Project) => void) | undefined;
   vi.mocked(api.uploadVideo).mockImplementation((_file, progress) => {
     progress(37);
@@ -302,13 +302,37 @@ it("shows a real upload percentage and accessible progress bar until upload comp
     screen.getByRole("progressbar", { name: "Video upload progress" }),
   ).toHaveAttribute("value", "37");
   expect(screen.getByText("37%", { exact: true })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Play game" })).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Cancel upload" }),
   ).toBeInTheDocument();
   await act(async () => {
-    finish?.({ ...project, status: "queued" });
+    finish?.({
+      ...project,
+      status: "queued",
+      stage: "Getting your video ready",
+      progress: 5,
+    });
   });
-  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("progressbar", { name: "Video upload progress" }),
+  ).not.toBeInTheDocument();
+  expect(document.querySelector("video")?.getAttribute("src")).toMatch(
+    /^blob:/,
+  );
+  const preparation = screen.getByRole("progressbar", {
+    name: "Getting your video ready",
+  });
+  expect(preparation).toHaveAttribute("aria-valuenow", "5");
+  const gameButton = screen.getByRole("button", { name: "Play game" });
+  expect(
+    gameButton.compareDocumentPosition(preparation) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  await userEvent.click(gameButton);
+  expect(
+    await screen.findByText(/Your video is getting ready/),
+  ).toBeInTheDocument();
 });
 it("imports a valid video and opens its workspace", async () => {
   vi.mocked(api.uploadVideo).mockResolvedValue({

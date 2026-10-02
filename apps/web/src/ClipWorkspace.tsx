@@ -17,6 +17,7 @@ import { navigate } from "./App";
 import { formatTime } from "./media";
 import { useAuthGate } from "./AuthGate";
 import { ProgressRing } from "./ProgressRing";
+import { plainSummary, TranscriptText } from "./TranscriptText";
 import { AudioStudio, normalizeAudio, previewAudio } from "./AudioStudio";
 import {
   EditedVideoPlayer,
@@ -133,19 +134,12 @@ function CaptionEditor({
         if (e.currentTarget.open) void load();
       }}
     >
-      <summary>Review & correct transcript</summary>
-      <p className="hint">
-        Correct names, slang or uncertain words. [beep] means a possible tone;
-        missing or muted speech cannot be reconstructed. Edited lines keep
-        phrase timing and lose automatic word highlighting.
-      </p>
+      <summary>Edit subtitles</summary>
+      <p className="hint">Edit the words, then save.</p>
       {rows.map((cue, i) => (
         <label key={i} className={cue.review ? "caption-review" : ""}>
-          <span>
-            {formatTime(cue.start)}–{formatTime(cue.end)}{" "}
-            {cue.review && "· Review this line"}
-          </span>
           <textarea
+            aria-label={`Subtitle line ${i + 1}`}
             dir="auto"
             maxLength={500}
             rows={2}
@@ -439,32 +433,19 @@ export function ClipWorkspace({
           </div>
         </section>
         <section className="clip-details">
-          <details
+          <section
             className="card context-card moment-context"
-            open={editing ? true : undefined}
+            aria-label="What’s in this moment?"
           >
-            <summary>What’s in this moment?</summary>
-            <span className="step-label">THE STORY IN THIS CUT</span>
-
-            <p className="source-range">
-              From {formatTime(short.start_ms / 1000)} to{" "}
-              {formatTime(short.end_ms / 1000)} in your original video.
-            </p>
-            {short.summary.map((line, i) => (
-              <p key={i} dir="auto">
-                {line}
-              </p>
-            ))}
-            <details>
-              <summary>Read the excerpt transcript</summary>
-              {short.transcript.map((line, i) => (
-                <p key={i} dir="auto">
-                  {line.text}
-                </p>
-              ))}
-            </details>
-            <p className="hint quality-note">{short.quality_note}</p>
-          </details>
+            <h3>What’s in this moment?</h3>
+            <TranscriptText
+              text={
+                short.transcript.length
+                  ? short.transcript.map((line) => line.text).join(" ")
+                  : [...new Set(short.summary.map(plainSummary))].join(" ")
+              }
+            />
+          </section>
           {!editing && (
             <div className="card quick-cover-card">
               <h3>Pick your cover</h3>
