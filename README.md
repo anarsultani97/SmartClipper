@@ -18,21 +18,21 @@ This is a **local-storage beta**, with account isolation. Google sign-in needs r
 
 Requirements: Node.js 24, a clean Python 3.12+ environment, uv, FFmpeg and ffprobe. Run from the repository root. Prefer `uv python install 3.12` and `uv sync --managed-python` if an existing Conda environment conflicts with native speech libraries.
 
-~~~sh
+```sh
 npm ci
 uv sync --locked
 uv run alembic upgrade head
-~~~
+```
 
 Optionally copy .env.example to .env and configure native executable paths. Uploaded media and database files live in ignored data/; do not commit them.
 
 Run these in three terminals:
 
-~~~sh
+```sh
 uv run uvicorn smartclipper_api.app:app --host 127.0.0.1 --port 8000
 uv run python -m smartclipper_api.worker
 npm run dev
-~~~
+```
 
 Open http://127.0.0.1:5173 to enter the main workspace directly. Import, generate and edit as a guest; sign in when downloading. Only the guided direction remains. The API docs are at http://127.0.0.1:8000/docs.
 
@@ -40,14 +40,14 @@ Import an MP4 (up to 3 GB / 30 minutes), choose language/platform/length, wait f
 
 ## Validation
 
-~~~sh
+```sh
 npm test
 npm run build
 uv run pytest
 uv run ruff check .
 npm exec --workspace @smartclipper/web -- playwright install chromium
 npm run test:e2e
-~~~
+```
 
 See [local development](docs/development/local-development.md), [guided UI review](docs/design/ui-directions.md), and [generation architecture](docs/architecture/0003-short-generation.md) for setup, limitations and acceptance evidence.
 
@@ -58,13 +58,17 @@ See [local development](docs/development/local-development.md), [guided UI revie
 - [Web architecture decision](docs/architecture/0002-web-stack.md)
 - [Generation, authentication, covers and activity dashboard](docs/architecture/0003-short-generation.md)
 - [Creator quality, caption research and faster first results](docs/architecture/0004-creator-quality-and-speed.md)
+- [Progressive shorts, readable colors and optional waiting game](docs/architecture/0007-progressive-shorts-experience.md)
+- [Hosting, domain and cost plan](docs/architecture/hosting-cost-plan.md)
+- [Google/Facebook local credential setup](docs/development/social-sign-in.md#local-credential-helper)
+- [Progressive shorts acceptance](docs/development/progressive-shorts-acceptance.md)
 - [Team branches and workflow](docs/development/team-workflow.md)
 
 Hosted direction: React + FastAPI + PostgreSQL + private object storage + independent Python workers. FFmpeg performs native media operations; faster-whisper supplies transcription through an adapter. Context selection uses bounded transcript analysis and sparse frames. Keep the source intact and return fewer than five shorts when quality/context cannot support five.
 
 ## Codebase
 
-~~~text
+```text
 apps/web/                      React UI, unit tests, browser tests
 services/api/                  FastAPI, ORM, migrations, local worker, tests
 packages/media-engine/         Reserved reusable media/domain boundaries
@@ -72,31 +76,31 @@ packages/contracts/            Generated API types and contract documentation
 docs/                          Plan, stack, guided UI review, developer guides
 .github/workflows/             Frontend/backend foundation checks
 .codex/                        Development model profiles
-~~~
+```
 
 apps/desktop/ is a historical scaffold superseded by the web decision. Reusable processing will move from the initial local worker to the media-engine package and hosted worker service as the pipeline grows.
 
 ## Development model configuration
 
-| Task | Model | Reasoning | Profile |
-| --- | --- | --- | --- |
-| Lightweight | GPT-6 Luna (gpt-6-luna) | Low | smartclipper-light |
-| Medium | GPT-6.1 Sol (gpt-6.1-sol) | Medium | smartclipper-medium |
-| Architecture / high priority | GPT-6 Astra (gpt-6-astra) | High | smartclipper-high |
+| Task                         | Model                     | Reasoning | Profile             |
+| ---------------------------- | ------------------------- | --------- | ------------------- |
+| Lightweight                  | GPT-6 Luna (gpt-6-luna)   | Low       | smartclipper-light  |
+| Medium                       | GPT-6.1 Sol (gpt-6.1-sol) | Medium    | smartclipper-medium |
+| Architecture / high priority | GPT-6 Astra (gpt-6-astra) | High      | smartclipper-high   |
 
 .codex/config.toml sets the repository default. Named configuration files live in .codex/. Install them in your Codex configuration directory before selecting a profile:
 
-~~~powershell
+```powershell
 $configDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 New-Item -ItemType Directory -Path $configDir -Force | Out-Null
 Copy-Item .codex/smartclipper-*.config.toml -Destination $configDir
-~~~
+```
 
-~~~sh
+```sh
 codex --profile smartclipper-light
 codex --profile smartclipper-medium
 codex --profile smartclipper-high
-~~~
+```
 
 Choose the matching model in Codex app/IDE controls where supported. Profiles require a trusted project and can be overridden by explicit session selections. These configure the development assistant; they do not route production inference automatically.
 

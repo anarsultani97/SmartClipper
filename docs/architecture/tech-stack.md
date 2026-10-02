@@ -4,25 +4,25 @@ Date: 2026-10-01. Status: guided beta implemented; versions are pinned in lockfi
 
 ## Application layers
 
-| Layer | Choice | Purpose |
-| --- | --- | --- |
-| Browser | React, TypeScript, Vite; semantic HTML and CSS | Upload, library, video review, timeline, downloads |
-| Client state | React state initially; TanStack Query when needed | Local editing and server state without duplicating persisted state |
-| API | Python, FastAPI, Pydantic | Validated versioned REST and OpenAPI contracts |
-| Authentication | Authlib, Argon2, opaque SQL sessions | Google/Facebook adapters, email login, CSRF and ownership |
-| Database | SQLAlchemy 2, Alembic; PostgreSQL for hosted app | Projects, ownership, media metadata, revisions, jobs |
-| Local review database | SQLite | Zero-service developer setup; same ORM and explicit migrations |
-| Processing | Independent Python worker; Celery/Redis for hosted pipeline | Durable asynchronous CPU/GPU jobs |
-| Media | FFmpeg, ffprobe | Probe, extraction, proxy, quality filters, rendering |
-| Transcription | faster-whisper behind an adapter | CPU development and optional Linux GPU workers |
-| Quality | FFmpeg sparse decoding, NumPy/Pillow | Brightness/blur checks and cover selection; fuller scene analysis later |
-| AI | Provider-independent structured context adapter | Topic mapping and candidate selection |
-| Media storage | Private S3-compatible object storage when hosted | Direct multipart uploads, signed previews/downloads |
-| Local review storage | Ignored local data directory | Small-file import and playback during initial development |
-| Tooling | npm workspace and lockfile initially; uv for Python | Reproducible dependencies |
-| Tests | pytest, Vitest, React Testing Library, Playwright | Domain, API, UI, browser journeys |
-| Activity | Indexed database aggregates, native React/CSS | Personal/operator dashboards on demand; no tracking SDK |
-| Deployment | Linux containers, static CDN/reverse proxy | Independent API and worker scaling |
+| Layer                 | Choice                                                      | Purpose                                                                 |
+| --------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Browser               | React, TypeScript, Vite; semantic HTML and CSS              | Upload, library, video review, timeline, downloads                      |
+| Client state          | React state initially; TanStack Query when needed           | Local editing and server state without duplicating persisted state      |
+| API                   | Python, FastAPI, Pydantic                                   | Validated versioned REST and OpenAPI contracts                          |
+| Authentication        | Authlib, Argon2, opaque SQL sessions                        | Google/Facebook adapters, email login, CSRF and ownership               |
+| Database              | SQLAlchemy 2, Alembic; PostgreSQL for hosted app            | Projects, ownership, media metadata, revisions, jobs                    |
+| Local review database | SQLite                                                      | Zero-service developer setup; same ORM and explicit migrations          |
+| Processing            | Independent Python worker; Celery/Redis for hosted pipeline | Durable asynchronous CPU/GPU jobs                                       |
+| Media                 | FFmpeg, ffprobe                                             | Probe, extraction, proxy, quality filters, rendering                    |
+| Transcription         | faster-whisper behind an adapter                            | CPU development and optional Linux GPU workers                          |
+| Quality               | FFmpeg sparse decoding, NumPy/Pillow                        | Brightness/blur checks and cover selection; fuller scene analysis later |
+| AI                    | Provider-independent structured context adapter             | Topic mapping and candidate selection                                   |
+| Media storage         | Private S3-compatible object storage when hosted            | Direct multipart uploads, signed previews/downloads                     |
+| Local review storage  | Ignored local data directory                                | Small-file import and playback during initial development               |
+| Tooling               | npm workspace and lockfile initially; uv for Python         | Reproducible dependencies                                               |
+| Tests                 | pytest, Vitest, React Testing Library, Playwright           | Domain, API, UI, browser journeys                                       |
+| Activity              | Indexed database aggregates, native React/CSS               | Personal/operator dashboards on demand; no tracking SDK                 |
+| Deployment            | Linux containers, static CDN/reverse proxy                  | Independent API and worker scaling                                      |
 
 ## Initial implementation boundary
 
@@ -64,4 +64,4 @@ Pin dependencies and commit lockfiles during scaffolding. Use supported Node/Pyt
 - [FFmpeg filters](https://ffmpeg.org/ffmpeg-filters.html)
 - [Vitest](https://vitest.dev/guide/)
 
-See the [implementation plan](initial-implementation-plan.md) for workflow, contracts, milestones, and acceptance criteria.
+See the [implementation plan](initial-implementation-plan.md) for workflow, contracts, milestones, and acceptance criteria. The [progressive shorts experience](0007-progressive-shorts-experience.md) documents current batch publication, bounded polling and the optional lazy-loaded waiting game. The [hosting and cost plan](hosting-cost-plan.md) proposes same-origin CPU hosting, private multipart object uploads and measured GPU adoption for a later beta deployment.

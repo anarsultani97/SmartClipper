@@ -118,6 +118,12 @@ def generate(job, settings, sessions, stage):
             "No clean, complete speech excerpts fit this length. Try a longer length, "
             "a clearer video, or a timed transcript."
         )
+    # Persist the actual clean candidate count before publishing any clip.
+    # The requested count is an upper bound; quality may yield fewer shorts.
+    with sessions() as db:
+        stored = db.get(Job, job.id)
+        stored.options = {**stored.options, "planned_count": len(chosen)}
+        db.commit()
     lock = threading.Lock()
     completed = set()
     fractions = {i: 0.0 for i in range(len(chosen))}

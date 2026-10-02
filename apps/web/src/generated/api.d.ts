@@ -732,6 +732,13 @@ export interface components {
        * @default 0
        */
       progress: number;
+      /**
+       * Ready Count
+       * @default 0
+       */
+      ready_count: number;
+      /** Planned Count */
+      planned_count?: number | null;
     };
     /** LinkImport */
     LinkImport: {
@@ -1649,7 +1656,9 @@ export interface operations {
   };
   shorts_api_v1_projects__project_id__shorts_get: {
     parameters: {
-      query?: never;
+      query?: {
+        job_id?: string | null;
+      };
       header?: never;
       path: {
         project_id: string;

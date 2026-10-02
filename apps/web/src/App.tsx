@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -20,6 +27,7 @@ import {
   WandSparkles,
   ChartNoAxesCombined,
   X,
+  Gamepad2,
 } from "lucide-react";
 import * as api from "./api";
 import { formatTime, validateVideo } from "./media";
@@ -29,6 +37,7 @@ import { ActivityDashboard } from "./ActivityDashboard";
 import { AuthGate, useAuthGate } from "./AuthGate";
 import { ProgressRing } from "./ProgressRing";
 import { LinkImport } from "./LinkImport";
+const ReactionGame = lazy(() => import("./ReactionGame"));
 import {
   EditedVideoPlayer,
   VideoEditor,
@@ -1228,33 +1237,89 @@ function Results({
   const [shorts, setShorts] = useState<api.Short[]>([]);
   const [jobs, setJobs] = useState<api.Job[]>([]);
   const [previewId, setPreviewId] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
+  const [arrival, setArrival] = useState("");
+  const publishedIds = useRef(new Set<string>());
+  const currentGeneration = useRef("");
+  const pollDelay = useRef(1000);
   const loadSequence = useRef(0);
   const active = useRef(false);
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
     try {
-      const [s, j] = await Promise.all([
-        api.shorts(project.id),
-        api.jobs(project.id),
-      ]);
+      const j = await api.jobs(project.id);
+      const generation = j.find((item) => item.kind === "generate");
+      const s = await api.shorts(project.id, generation?.id);
       if (!active.current || sequence !== loadSequence.current) return;
+      const processing = j.some((item) =>
+        ["queued", "processing"].includes(item.status),
+      );
+      const generationProcessing =
+        generation && ["queued", "processing"].includes(generation.status);
+      pollDelay.current = processing ? 1000 : 10000;
+      if (currentGeneration.current !== (generation?.id || "")) {
+        currentGeneration.current = generation?.id || "";
+        publishedIds.current = new Set();
+        setArrival("");
+      }
+      const newItems = s.filter((item) => !publishedIds.current.has(item.id));
+      if (
+        newItems.length &&
+        (generationProcessing ||
+          (generation?.status === "ready" && publishedIds.current.size > 0))
+      ) {
+        setArrival(
+          publishedIds.current.size === 0
+            ? "Your first short is ready. Take a look while we finish the rest."
+            : `${s.length} shorts ready. Another moment just landed.`,
+        );
+      }
+      publishedIds.current = new Set(s.map((item) => item.id));
       setShorts([...s].sort((a, b) => a.start_ms - b.start_ms));
       setJobs(j);
+      setLoaded(true);
       setPreviewId((old) =>
         s.some((item) => item.id === old) ? old : s[0]?.id || "",
       );
     } catch (e) {
+      pollDelay.current = 10000;
       if (active.current && sequence === loadSequence.current) onError(e);
     }
   }, [project.id, onError]);
   useEffect(() => {
     active.current = true;
-    void load();
-    const timer = window.setInterval(load, 3000);
+    let stopped = false;
+    let polling = false;
+    let timer = 0;
+    const poll = async () => {
+      if (stopped || polling) return;
+      polling = true;
+      try {
+        await load();
+      } finally {
+        polling = false;
+      }
+      if (!stopped)
+        timer = window.setTimeout(
+          poll,
+          document.hidden ? 30000 : pollDelay.current,
+        );
+    };
+    void poll();
+    const resume = () => {
+      if (!document.hidden) {
+        window.clearTimeout(timer);
+        if (!stopped) void poll();
+      }
+    };
+    document.addEventListener("visibilitychange", resume);
     return () => {
       active.current = false;
       ++loadSequence.current;
-      window.clearInterval(timer);
+      stopped = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", resume);
     };
   }, [load]);
 
@@ -1264,6 +1329,8 @@ function Results({
   const latestGeneration = jobs.find((j) => j.kind === "generate");
   const failed =
     latestGeneration?.status === "failed" ? latestGeneration : undefined;
+  const planned = generating?.planned_count ?? null;
+  const remaining = planned === null ? 1 : Math.max(0, planned - shorts.length);
   return (
     <>
       <button
@@ -1278,7 +1345,7 @@ function Results({
           <h1>Your story, in shorts.</h1>
           <p>
             {shorts.length
-              ? `${shorts.length} suggested moments from ${project.filename}`
+              ? `${shorts.length} suggested ${shorts.length === 1 ? "moment" : "moments"} from ${project.filename}`
               : "Let’s find the moments worth sharing."}
           </p>
         </div>
@@ -1287,20 +1354,59 @@ function Results({
         </span>
       </div>
       {generating && (
-        <div className="job-banner" role="status">
+        <div className="job-banner progressive-banner">
           <ProgressRing
             value={generating.progress || 0}
             label={generating.stage}
             compact
           />
           <div>
-            <strong>{generating.stage}</strong>
+            <span className="eyebrow">YOUR MOMENTS ARE TAKING SHAPE</span>
+            <strong>
+              {shorts.length
+                ? `${shorts.length}${planned === null ? "" : ` of ${planned}`} ${(planned ?? shorts.length) === 1 ? "short" : "shorts"} ready`
+                : "Finding your first great moment"}
+            </strong>
             <p>
-              We’re preserving the original context and checking visual quality.
+              {shorts.length
+                ? "Preview and edit the ready shorts now. The rest keep processing."
+                : "Each short appears as soon as its preview and cover checks finish."}
             </p>
+            <span className="generation-current-step">{generating.stage}</span>
           </div>
+          <button
+            className="secondary game-trigger"
+            onClick={() => setGameOpen((old) => !old)}
+            aria-expanded={gameOpen}
+          >
+            <Gamepad2 size={17} />
+            {gameOpen ? "Hide game" : "Quick reaction break"}
+          </button>
         </div>
       )}
+      {arrival && generating && (
+        <p className="short-arrival notice" role="status" key={arrival}>
+          <Check size={18} />
+          {arrival}
+        </p>
+      )}
+      {gameOpen && (
+        <Suspense fallback={<p className="hint">Opening your tiny break…</p>}>
+          <ReactionGame
+            onClose={() => setGameOpen(false)}
+            processing={!!generating}
+          />
+        </Suspense>
+      )}
+      {!generating &&
+        latestGeneration?.status === "ready" &&
+        shorts.length > 0 && (
+          <div className="batch-complete" role="status">
+            <Check size={18} />
+            <strong>All {shorts.length} shorts are ready.</strong>
+            <span>Your next step: review, make it yours, then export.</span>
+          </div>
+        )}
       {generating && !shorts.length && (
         <section className="generation-stage card">
           <ProgressRing
@@ -1337,8 +1443,9 @@ function Results({
           aria-label="All suggested shorts in timeline order"
         >
           <p className="shorts-feed-note">
-            {shorts.length} shorts to explore · earliest moment first. Preview
-            any card or choose Edit short.
+            {shorts.length} {shorts.length === 1 ? "short" : "shorts"} to
+            explore · earliest moment first. Preview any card or choose Edit
+            short.
           </p>
           {shorts.map((short, index) => (
             <ClipWorkspace
@@ -1360,8 +1467,34 @@ function Results({
               }}
             />
           ))}
+          {generating && remaining > 0 && (
+            <div
+              className="pending-shorts"
+              aria-label="More shorts are processing"
+            >
+              {Array.from({ length: Math.min(remaining, 3) }, (_, index) => (
+                <div className="pending-short" key={index}>
+                  <span className="pending-art" aria-hidden="true">
+                    <Sparkles size={22} />
+                  </span>
+                  <div>
+                    <strong>
+                      {planned === null
+                        ? "More moments on the way"
+                        : `Short ${shorts.length + index + 1} is taking shape`}
+                    </strong>
+                    <p>
+                      Checking context, sound and clear covers before it
+                      appears.
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       ) : (
+        loaded &&
         !generating &&
         !failed && (
           <section className="empty-state">

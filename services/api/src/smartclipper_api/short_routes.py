@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from .auth import require_account, require_user
@@ -64,7 +64,7 @@ def short_view(short):
     }
 
 
-def job_view(job):
+def job_view(job, ready_count=0):
     return jsonable_encoder(
         {
             **{
@@ -72,6 +72,8 @@ def job_view(job):
                 for name in ("id", "project_id", "kind", "status", "stage", "error", "progress")
             },
             "options": {key: value for key, value in job.options.items() if key != "captions"},
+            "ready_count": ready_count,
+            "planned_count": job.options.get("planned_count") if job.kind == "generate" else None,
         }
     )
 
@@ -153,8 +155,15 @@ def install_short_routes(app, settings, sessions, get_project):
     def jobs(project_id: str, user: CurrentUser):
         with sessions() as db:
             get_project(db, project_id, user)
+            counts = dict(
+                db.execute(
+                    select(Short.job_id, func.count(Short.id))
+                    .where(Short.project_id == project_id)
+                    .group_by(Short.job_id)
+                ).all()
+            )
             return [
-                job_view(j)
+                job_view(j, counts.get(j.id, 0))
                 for j in db.scalars(
                     select(Job).where(Job.project_id == project_id).order_by(Job.created_at.desc())
                 ).all()
@@ -178,12 +187,20 @@ def install_short_routes(app, settings, sessions, get_project):
             return job_view(new)
 
     @app.get("/api/v1/projects/{project_id}/shorts", response_model=list[ShortView])
-    def shorts(project_id: str, user: CurrentUser):
+    def shorts(project_id: str, user: CurrentUser, job_id: str | None = None):
         with sessions() as db:
             get_project(db, project_id, user)
+            if job_id:
+                selected_job = db.get(Job, job_id)
+                if (
+                    not selected_job
+                    or selected_job.project_id != project_id
+                    or selected_job.kind != "generate"
+                ):
+                    raise HTTPException(404, "Generation not found for this video.")
             # Rows are committed only after each clip and its covers are complete.
             # Keep the newest generation with finished clips; don't mix old and new sets.
-            latest = db.scalar(
+            latest = job_id or db.scalar(
                 select(Short.job_id)
                 .join(Job, Short.job_id == Job.id)
                 .where(Short.project_id == project_id)
