@@ -64,7 +64,7 @@ test("new visitors see the main page before sign-in and can return from the acco
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText("Continue with Google")).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Continue with Facebook/ }),
+    page.locator("a").filter({ hasText: "Continue with Facebook" }),
   ).toHaveAttribute("aria-disabled", "true");
   await page.getByRole("button", { name: /Back to editing/ }).click();
   await expect(
@@ -201,6 +201,9 @@ test("results support subtitle toggles, thumbnails and a large preview", async (
     route.fulfill({ json: { groups: [], segments: [] } }),
   );
   await page.route("**/api/v1/projects/p/media/preview", (route) =>
+    route.fulfill({ status: 204 }),
+  );
+  await page.route("**/api/v1/shorts/s/media/**", (route) =>
     route.fulfill({ status: 204 }),
   );
   await page.route("**/api/v1/shorts/s", async (route) => {
