@@ -39,6 +39,11 @@ def test_five_diverse_complete_excerpts_stay_inside_requested_length():
     assert all(0 <= item["start"] < item["end"] <= 200 for item in result)
     assert all(item["end"] - item["start"] <= 30 for item in result)
     assert all(len(item["summary"]) == 3 for item in result)
+    assert all(
+        not line.startswith("The excerpt") and not line.startswith("The speaker")
+        for item in result
+        for line in item["summary"]
+    )
     assert all(a["end"] <= b["start"] for a, b in zip(result, result[1:], strict=False))
 
 

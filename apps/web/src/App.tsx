@@ -1,11 +1,4 @@
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -27,12 +20,12 @@ import {
   WandSparkles,
   ChartNoAxesCombined,
   X,
-  Gamepad2,
 } from "lucide-react";
 import * as api from "./api";
 import {
   formatImportLimits,
   formatTime,
+  simpleStage,
   validateVideo,
   type ImportLimits,
 } from "./media";
@@ -42,7 +35,8 @@ import { ActivityDashboard } from "./ActivityDashboard";
 import { AuthGate, useAuthGate } from "./AuthGate";
 import { ProgressRing } from "./ProgressRing";
 import { LinkImport } from "./LinkImport";
-const ReactionGame = lazy(() => import("./ReactionGame"));
+import { WaitingGame } from "./WaitingGame";
+import { AdPreview } from "./AdPreview";
 import {
   EditedVideoPlayer,
   VideoEditor,
@@ -760,7 +754,7 @@ export function App() {
                     <p>
                       Find the moments worth sharing.
                       <br />
-                      Turn your video into a handful of thoughtful shorts.
+                      Turn your video into short clips you can share.
                     </p>
                   </div>
                   <span className="heading-sticker">
@@ -794,11 +788,13 @@ export function App() {
                           </p>
                         </>
                       ) : (
-                        <ProgressRing
-                          value={progress}
-                          label="Uploading your video"
-                          detail="Your preview will appear when upload reaches 100%."
-                        />
+                        <WaitingGame active task="upload">
+                          <ProgressRing
+                            value={progress}
+                            label="Uploading your video"
+                            detail="Your video will appear when the upload is done."
+                          />
+                        </WaitingGame>
                       )
                     ) : (
                       <>
@@ -842,7 +838,7 @@ export function App() {
                   <section className="card import-options">
                     <span className="step-label">01 / MAKE IT YOURS</span>
                     <h2>
-                      A few preferences.
+                      Choose your settings.
                       <br />
                       We’ll take it from here.
                     </h2>
@@ -868,12 +864,10 @@ export function App() {
                   <div>
                     <WandSparkles />
                     <h3>Your final say</h3>
-                    <p>
-                      Preview the context, customize, and download your
-                      favorites.
-                    </p>
+                    <p>Watch, edit, and download your favorites.</p>
                   </div>
                 </section>
+                <AdPreview />
                 <section className="library">
                   <div className="section-heading">
                     <h2>
@@ -1117,7 +1111,7 @@ function SourceWorkspace({
                         disabled={editBusy}
                         onClick={() => setEdits(sourceValue(draftProject))}
                       >
-                        Discard changes
+                        Undo changes
                       </button>
                     )}
                   </div>
@@ -1132,11 +1126,13 @@ function SourceWorkspace({
           ) : (
             <div className="preparing">
               {project.status !== "failed" && (
-                <ProgressRing
-                  value={project.progress || 0}
-                  label={project.stage || "Getting your story ready"}
-                  detail="Preparing video and audio. You can leave this page and come back."
-                />
+                <WaitingGame active task="video">
+                  <ProgressRing
+                    value={project.progress || 0}
+                    label={project.stage || "Getting your video ready"}
+                    detail="Getting video and audio ready. You can come back later."
+                  />
+                </WaitingGame>
               )}
               <h2>
                 {project.status === "failed"
@@ -1261,7 +1257,6 @@ function Results({
   const [jobs, setJobs] = useState<api.Job[]>([]);
   const [previewId, setPreviewId] = useState("");
   const [loaded, setLoaded] = useState(false);
-  const [gameOpen, setGameOpen] = useState(false);
   const [arrival, setArrival] = useState("");
   const publishedIds = useRef(new Set<string>());
   const currentGeneration = useRef("");
@@ -1360,7 +1355,7 @@ function Results({
         className="back-link"
         onClick={() => navigate(`/projects/${project.id}`)}
       >
-        <ArrowLeft size={16} /> Original video & preferences
+        <ArrowLeft size={16} /> Original video & settings
       </button>
       <div className="workspace-heading">
         <div>
@@ -1376,50 +1371,37 @@ function Results({
           <Sparkles size={15} /> You have the final cut
         </span>
       </div>
-      {generating && (
-        <div className="job-banner progressive-banner">
-          <ProgressRing
-            value={generating.progress || 0}
-            label={generating.stage}
-            compact
-          />
-          <div>
-            <span className="eyebrow">YOUR MOMENTS ARE TAKING SHAPE</span>
-            <strong>
-              {shorts.length
-                ? `${shorts.length}${planned === null ? "" : ` of ${planned}`} ${(planned ?? shorts.length) === 1 ? "short" : "shorts"} ready`
-                : "Finding your first great moment"}
-            </strong>
-            <p>
-              {shorts.length
-                ? "Preview and edit the ready shorts now. The rest keep processing."
-                : "Each short appears as soon as its preview and cover checks finish."}
-            </p>
-            <span className="generation-current-step">{generating.stage}</span>
+      <WaitingGame active={!!generating} task="shorts">
+        {generating && (
+          <div className="job-banner progressive-banner">
+            <ProgressRing
+              value={generating.progress || 0}
+              label={simpleStage(generating.stage)}
+            />
+            <div>
+              <span className="eyebrow">MAKING YOUR SHORTS</span>
+              <strong>
+                {shorts.length
+                  ? `${shorts.length}${planned === null ? "" : ` of ${planned}`} ${(planned ?? shorts.length) === 1 ? "short" : "shorts"} ready`
+                  : "Finding your first short"}
+              </strong>
+              <p>
+                {shorts.length
+                  ? "Watch the ready shorts now. We are making the rest."
+                  : "Your first short will appear here as soon as it is ready."}
+              </p>
+              <span className="generation-current-step">
+                {simpleStage(generating.stage)}
+              </span>
+            </div>
           </div>
-          <button
-            className="secondary game-trigger"
-            onClick={() => setGameOpen((old) => !old)}
-            aria-expanded={gameOpen}
-          >
-            <Gamepad2 size={17} />
-            {gameOpen ? "Hide game" : "Quick reaction break"}
-          </button>
-        </div>
-      )}
+        )}
+      </WaitingGame>
       {arrival && generating && (
         <p className="short-arrival notice" role="status" key={arrival}>
           <Check size={18} />
           {arrival}
         </p>
-      )}
-      {gameOpen && (
-        <Suspense fallback={<p className="hint">Opening your tiny break…</p>}>
-          <ReactionGame
-            onClose={() => setGameOpen(false)}
-            processing={!!generating}
-          />
-        </Suspense>
       )}
       {!generating &&
         latestGeneration?.status === "ready" &&
@@ -1430,19 +1412,10 @@ function Results({
             <span>Your next step: review, make it yours, then export.</span>
           </div>
         )}
-      {generating && !shorts.length && (
-        <section className="generation-stage card">
-          <ProgressRing
-            value={generating.progress || 0}
-            label={generating.stage}
-            detail="Your first short appears here as soon as it is ready. Percentages show processing progress; duration depends on the video and hardware."
-          />
-        </section>
-      )}
       {failed && !generating && (
         <div role="alert" className="alert">
           <div>
-            <strong>Generation needs attention.</strong>
+            <strong>We could not finish your shorts.</strong>
             <p>{failed.error}</p>
           </div>
           <button

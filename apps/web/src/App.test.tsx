@@ -302,6 +302,7 @@ it("shows a real upload percentage and accessible progress bar until upload comp
     screen.getByRole("progressbar", { name: "Video upload progress" }),
   ).toHaveAttribute("value", "37");
   expect(screen.getByText("37%", { exact: true })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Play game" })).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Cancel upload" }),
   ).toBeInTheDocument();
