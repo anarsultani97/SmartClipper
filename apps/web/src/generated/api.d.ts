@@ -709,6 +709,17 @@ export interface components {
       /** Detail */
       detail?: components["schemas"]["ValidationError"][];
     };
+    /** HealthView */
+    HealthView: {
+      /** Status */
+      status: string;
+      /** Mode */
+      mode: string;
+      /** Max Upload Bytes */
+      max_upload_bytes: number;
+      /** Max Duration Seconds */
+      max_duration_seconds: number;
+    };
     /** JobView */
     JobView: {
       /** Id */
@@ -1273,7 +1284,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": unknown;
+          "application/json": components["schemas"]["HealthView"];
         };
       };
     };

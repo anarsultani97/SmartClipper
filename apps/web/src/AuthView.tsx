@@ -110,7 +110,7 @@ export function AuthView({
             </span>
             <span>
               <Captions />
-              Eleven languages & English captions
+              Multilingual shorts & English captions
             </span>
             <span>
               <ShieldCheck />A private workspace for your videos

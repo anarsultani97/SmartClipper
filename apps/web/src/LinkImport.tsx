@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Link2, LoaderCircle, X } from "lucide-react";
 import * as api from "./api";
+import { formatImportLimits, type ImportLimits } from "./media";
 
 export function LinkImport({
   onClose,
   onImported,
+  limits = null,
 }: {
   onClose: () => void;
   onImported: (project: api.Project) => void;
+  limits?: ImportLimits | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const mounted = useRef(true);
@@ -88,8 +91,8 @@ export function LinkImport({
           </p>
         )}
         <p className="hint">
-          Up to 3 GB / 30 minutes. Use videos you’re allowed to reuse. Private
-          or sign-in-only links may require an MP4 upload.
+          {formatImportLimits(limits)}. Use videos you’re allowed to reuse.
+          Private or sign-in-only links may require an MP4 upload.
         </p>
         <button
           className="primary"

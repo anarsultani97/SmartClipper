@@ -39,7 +39,7 @@ def test_google_state_pkce_and_callback_rejection(tmp_path, monkeypatch):
             "/api/v1/auth/google/callback?code=bad&state=wrong", follow_redirects=False
         )
         assert bad.status_code == 303
-        assert "auth_error=cancelled" in bad.headers["location"]
+        assert "auth_error=expired" in bad.headers["location"]
 
 
 def test_verified_google_callback_claims_guest_and_preserves_host_and_project(

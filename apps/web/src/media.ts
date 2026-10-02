@@ -1,11 +1,36 @@
 export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024 * 1024;
+export type ImportLimits = {
+  max_upload_bytes: number;
+  max_duration_seconds: number;
+};
+export function formatSizeLimit(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB"];
+  let unit = 0;
+  while (bytes >= 1024 && unit < units.length - 1) {
+    bytes /= 1024;
+    unit++;
+  }
+  return `${Number(bytes.toFixed(2))} ${units[unit]}`;
+}
+export function formatImportLimits(limits: ImportLimits | null): string {
+  if (
+    !limits ||
+    !Number.isFinite(limits.max_upload_bytes) ||
+    !Number.isFinite(limits.max_duration_seconds) ||
+    limits.max_upload_bytes <= 0 ||
+    limits.max_duration_seconds <= 0
+  )
+    return "Limits checked by the app service";
+  return `up to ${formatSizeLimit(limits.max_upload_bytes)} · up to ${Number((limits.max_duration_seconds / 60).toFixed(2))} minutes`;
+}
 export function validateVideo(
   file: Pick<File, "name" | "size">,
+  maxBytes = MAX_UPLOAD_BYTES,
 ): string | null {
   if (!file.name.toLowerCase().endsWith(".mp4")) return "Choose an MP4 video.";
   if (!file.size) return "This video is empty.";
-  if (file.size > MAX_UPLOAD_BYTES)
-    return "Choose a video no larger than 3 GB.";
+  if (file.size > maxBytes)
+    return `Choose a video no larger than ${formatSizeLimit(maxBytes)}.`;
   return null;
 }
 export function formatTime(seconds: number): string {

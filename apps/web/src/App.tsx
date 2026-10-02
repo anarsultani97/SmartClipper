@@ -30,7 +30,12 @@ import {
   Gamepad2,
 } from "lucide-react";
 import * as api from "./api";
-import { formatTime, validateVideo } from "./media";
+import {
+  formatImportLimits,
+  formatTime,
+  validateVideo,
+  type ImportLimits,
+} from "./media";
 import { AuthView } from "./AuthView";
 import { ClipWorkspace, ThumbnailEditor } from "./ClipWorkspace";
 import { ActivityDashboard } from "./ActivityDashboard";
@@ -57,6 +62,7 @@ export const languages = [
   ["ja", "日本語"],
   ["fr", "Français"],
   ["tr", "Türkçe"],
+  ["az", "Azərbaycan dili"],
 ];
 export const defaultOptions: api.Options = {
   language: "auto",
@@ -215,6 +221,22 @@ export function App() {
   const [progress, setProgress] = useState<number | null>(null);
   const [uploadingName, setUploadingName] = useState("");
   const [linkImportOpen, setLinkImportOpen] = useState(false);
+  const [limits, setLimits] = useState<ImportLimits | null>(null);
+  useEffect(() => {
+    let active = true;
+    api
+      .health()
+      .then((value) => {
+        if (active) setLimits(value);
+      })
+      .catch(() => {
+        // Server validation remains authoritative when limits cannot be loaded.
+        if (active) setLimits(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const [localPreview, setLocalPreview] = useState("");
   const [localPreviewId, setLocalPreviewId] = useState("");
   useEffect(
@@ -318,7 +340,7 @@ export function App() {
       setError("Your workspace is reconnecting. Please try again shortly.");
       return;
     }
-    const invalid = validateVideo(file);
+    const invalid = validateVideo(file, limits?.max_upload_bytes);
     if (invalid) {
       setError(invalid);
       return;
@@ -620,6 +642,7 @@ export function App() {
           <div className="content">
             {linkImportOpen && (
               <LinkImport
+                limits={limits}
                 onClose={() => setLinkImportOpen(false)}
                 onImported={(project) => {
                   ++refreshSequence.current;
@@ -801,7 +824,7 @@ export function App() {
                             ? `Uploading ${progress}%`
                             : "Choose video"}
                         </button>
-                        <small>MP4 · up to 3 GB · up to 30 minutes</small>
+                        <small>MP4 · {formatImportLimits(limits)}</small>
                         <button
                           className="text-button paste-link-inline"
                           disabled={!user?.id}
@@ -831,8 +854,8 @@ export function App() {
                     <Captions />
                     <h3>Speak your language</h3>
                     <p>
-                      Eleven languages, including Turkish, with optional English
-                      captions.
+                      Twelve languages, including Turkish and Azerbaijani, with
+                      optional English captions.
                     </p>
                   </div>
                   <div>

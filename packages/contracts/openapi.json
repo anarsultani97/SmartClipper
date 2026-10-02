@@ -234,7 +234,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HealthView"
+                }
               }
             }
           }
@@ -1696,6 +1698,34 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HealthView": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "max_upload_bytes": {
+            "type": "integer",
+            "title": "Max Upload Bytes"
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "title": "Max Duration Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "mode",
+          "max_upload_bytes",
+          "max_duration_seconds"
+        ],
+        "title": "HealthView"
       },
       "JobView": {
         "properties": {

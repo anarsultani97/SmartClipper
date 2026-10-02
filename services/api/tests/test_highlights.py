@@ -10,7 +10,9 @@ def test_srt_timing_validation_and_caption_injection():
     segments = parse_srt("1\n00:00:01,000 --> 00:00:04,000\n<i>Hello.</i>", 10)
     assert segments == [{"start": 1, "end": 4, "text": "Hello."}]
     assert "WEBVTT" in caption_text(segments)
-    assert relative_segments(segments, 2, 6) == [{"start": 0, "end": 2, "text": "Hello."}]
+    assert relative_segments(segments, 2, 6) == [
+        {"start": 0, "end": 2, "text": "Hello.", "review": False, "words": []}
+    ]
     for invalid in (
         "untimed words",
         "1\n00:00:01,000 --> 00:00:11,000\nOutside",
